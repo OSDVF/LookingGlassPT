@@ -32,6 +32,22 @@ target_link_libraries(LookingGlassPT PRIVATE GLEW::GLEW)
 find_package(imgui CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE imgui::imgui)
 
+find_package(libusb CONFIG REQUIRED)
+target_include_directories(LookingGlassPT PRIVATE ${LIBUSB_INCLUDE_DIRS})
+target_link_libraries(LookingGlassPT PRIVATE ${LIBUSB_LIBRARIES})
+
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(LookingGlassPT PRIVATE nlohmann_json::nlohmann_json)
+
+set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+
+find_package(tiny-process-library CONFIG REQUIRED)
+target_link_libraries(LookingGlassPT PRIVATE tiny-process-library::tiny-process-library)
+
+configure_file(index.js index.js COPYONLY)
+configure_file(package.json package.json COPYONLY)
+file(COPY node_modules DESTINATION .)
+
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET LookingGlassPT PROPERTY CXX_STANDARD 20)
 endif()

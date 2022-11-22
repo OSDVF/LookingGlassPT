@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "dependencies": [
     "glew",
+    "glm",
     "sdl2",
-    "imgui"
+    "imgui",
+    "libusb",
+    "nlohmann-json",
+    "tiny-process-library"
   ]
 }

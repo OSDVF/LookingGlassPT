@@ -9,6 +9,7 @@
 #include <imgui.h>
 #include "impl/imgui_impl_opengl3.h"
 #include "impl/imgui_impl_sdl.h"
+#include "App.h"
 
 ImGuiIO io;
 int main()
@@ -57,6 +58,8 @@ int main()
 
 	bool playing = true;
 	bool fullscreen = false;
+
+	App::setup(io);
 	while (playing)
 	{
 		SDL_Event event;
@@ -69,16 +72,16 @@ int main()
 				playing = false;
 				break;
 			case SDL_MOUSEMOTION:
-				draw(window);
+				draw(window, event);
 				break;
 			case SDL_MOUSEBUTTONDOWN:
-				draw(window);
+				draw(window, event);
 				break;
 			case SDL_MOUSEBUTTONUP:
-				draw(window);
+				draw(window, event);
 				break;
 			case SDL_MOUSEWHEEL:
-				draw(window);
+				draw(window, event);
 				break;
 			case SDL_KEYUP: /* fallthrough */
 				switch (event.key.keysym.sym)
@@ -104,6 +107,7 @@ int main()
 				printf("`%c' was %s\n",
 					event.key.keysym.sym,
 					(event.key.state == SDL_PRESSED) ? "pressed" : "released");
+				draw(window, event);
 				break;
 			}
 		}
@@ -125,28 +129,14 @@ int main()
 	return 0;
 }
 
-float f;
-int counter = 0;
-void draw(SDL_Window* window)
+void draw(SDL_Window* window, SDL_Event event)
 {
 	// Start the Dear ImGui frame
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplSDL2_NewFrame();
 	ImGui::NewFrame();
 
-	ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-
-	ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-
-	ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-
-	if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-		counter++;
-	ImGui::SameLine();
-	ImGui::Text("counter = %d", counter);
-
-	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-	ImGui::End();
+	App::draw(io, event);
 
 	ImGui::Render();
 	glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);

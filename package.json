@@ -1,0 +1,10 @@
+{
+  "name": "looking-glass-calibration-wrapper",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "holoplay": "1.0.3",
+    "mock-dom-resources": "^9.0.0",
+    "three": "0.146.0"
+  }
+}
