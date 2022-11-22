@@ -5,8 +5,19 @@ cmake_minimum_required (VERSION 3.8)
 
 project ("LookingGlassPT")
 
+file(GLOB all_SRCS
+        "${PROJECT_SOURCE_DIR}/impl/*.h"
+        "${PROJECT_SOURCE_DIR}/impl/*.hpp"
+        "${PROJECT_SOURCE_DIR}/impl/*.cpp"
+        "${PROJECT_SOURCE_DIR}/impl/*.c"
+        "${PROJECT_SOURCE_DIR}/*.c"
+        "${PROJECT_SOURCE_DIR}/*.cpp"
+        "${PROJECT_SOURCE_DIR}/*.h"
+        "${PROJECT_SOURCE_DIR}/*.hpp"
+        )
+
 # Add source to this project's executable.
-add_executable (LookingGlassPT "LookingGlassPT.cpp" "LookingGlassPT.h")
+add_executable (LookingGlassPT ${all_SRCS})
 
 find_package(SDL2 CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT
@@ -17,6 +28,9 @@ target_link_libraries(LookingGlassPT
 
 find_package(GLEW REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE GLEW::GLEW)
+
+find_package(imgui CONFIG REQUIRED)
+target_link_libraries(LookingGlassPT PRIVATE imgui::imgui)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET LookingGlassPT PROPERTY CXX_STANDARD 20)

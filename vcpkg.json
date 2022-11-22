@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "dependencies": [
     "glew",
-    "sdl2"
+    "sdl2",
+    "imgui"
   ]
 }

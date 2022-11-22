@@ -6,7 +6,11 @@
 #undef main
 #include <GL/glew.h>
 #include <cassert>
+#include <imgui.h>
+#include "impl/imgui_impl_opengl3.h"
+#include "impl/imgui_impl_sdl.h"
 
+ImGuiIO io;
 int main()
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
@@ -26,12 +30,24 @@ int main()
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-	/* Create our window centered at 512x512 resolution */
+	auto windowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
 	SDL_Window* window = SDL_CreateWindow("Looking Glass Path Tracer Demo", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-		640, 480, SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
+		640, 480, windowFlags);
 
 	assert(window);
 	SDL_GLContext context = SDL_GL_CreateContext(window);
+	SDL_GL_MakeCurrent(window, context);
+
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	io = ImGui::GetIO(); (void)io;
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+	ImGui::StyleColorsDark();
+	//ImGui::StyleColorsLight();
+
+	// Setup Platform/Renderer backends
+	ImGui_ImplSDL2_InitForOpenGL(window, context);
+	ImGui_ImplOpenGL3_Init("#version 430");
 
 	glewExperimental = true;
 	if (glewInit() != GLEW_OK) {
@@ -40,11 +56,13 @@ int main()
 	}
 
 	bool playing = true;
+	bool fullscreen = false;
 	while (playing)
 	{
 		SDL_Event event;
 		if (SDL_WaitEvent(&event))
 		{
+			ImGui_ImplSDL2_ProcessEvent(&event);
 			switch (event.type)
 			{
 			case SDL_QUIT:
@@ -63,6 +81,25 @@ int main()
 				draw(window);
 				break;
 			case SDL_KEYUP: /* fallthrough */
+				switch (event.key.keysym.sym)
+				{
+				case SDLK_ESCAPE:
+					playing = 0;
+					break;
+				case 'f':
+					fullscreen = !fullscreen;
+					if (fullscreen)
+					{
+						SDL_SetWindowFullscreen(window, windowFlags | SDL_WINDOW_FULLSCREEN_DESKTOP);
+					}
+					else
+					{
+						SDL_SetWindowFullscreen(window, windowFlags);
+					}
+					break;
+				default:
+					break;
+				}
 			case SDL_KEYDOWN:
 				printf("`%c' was %s\n",
 					event.key.keysym.sym,
@@ -75,6 +112,12 @@ int main()
 			std::cerr << SDL_GetError() << std::endl;
 		}
 	}
+
+	// Cleanup
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplSDL2_Shutdown();
+	ImGui::DestroyContext();
+
 	SDL_GL_DeleteContext(context);
 	SDL_DestroyWindow(window);
 	atexit(SDL_Quit);
@@ -82,10 +125,34 @@ int main()
 	return 0;
 }
 
-
+float f;
+int counter = 0;
 void draw(SDL_Window* window)
 {
+	// Start the Dear ImGui frame
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplSDL2_NewFrame();
+	ImGui::NewFrame();
+
+	ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+
+	ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+
+	ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+
+	if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+		counter++;
+	ImGui::SameLine();
+	ImGui::Text("counter = %d", counter);
+
+	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+	ImGui::End();
+
+	ImGui::Render();
+	glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
 	glClearColor(0.0, 1.0, 0.0, 1.0);
 	glClear(GL_COLOR_BUFFER_BIT);
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
 	SDL_GL_SwapWindow(window);
 }
