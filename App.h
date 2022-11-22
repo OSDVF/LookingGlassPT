@@ -12,7 +12,7 @@ public:
 				std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
 				calibration = BridgeCalibration().getCalibration();
 			}
-			catch (const std::exception& e)
+			catch (const std::runtime_error& e)
 			{
 				std::cerr << e.what() << std::endl;
 				std::cout << "Trying USB calibration..." << std::endl;

@@ -35,6 +35,19 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	std::mutex mtx;
 	std::unique_lock<std::mutex> lck(mtx);
 
+	std::cout << "Checking Node.js version" << std::endl;
+	Process nodeExists("node -v");
+	if (nodeExists.get_exit_status() != 0)
+	{
+		std::cout << "Node.js existence check failed. Try to run it anyway? [Y/N]" << std::endl;
+		char choice;
+		std::cin >> choice;
+		if (std::tolower(choice) == 'n')
+		{
+			throw std::runtime_error("Node.js skipped.");
+		}
+	}
+
 	Process process(
 		"node --harmony-top-level-await index.js", "",
 		[&](const char* bytes, size_t n)
@@ -78,6 +91,7 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	if (cv.wait_for(lck, std::chrono::seconds(TIMEOUT)) == std::cv_status::timeout && !process.try_get_exit_status(exit_status))
 	{
 		process.kill();
+		thread.detach();
 		throw std::runtime_error(std::format("Looking Glass Bridge not responding in {} seconds", TIMEOUT));
 	}
 	thread.join();
