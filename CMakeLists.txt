@@ -44,9 +44,24 @@ set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
 find_package(tiny-process-library CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE tiny-process-library::tiny-process-library)
 
+# 
+# Include node.js program in the compilation
+# depends on npm
+#
 configure_file(index.js index.js COPYONLY)
 configure_file(package.json package.json COPYONLY)
-file(COPY node_modules DESTINATION .)
+
+add_custom_command(OUTPUT node_modules COMMAND npm install) # install dependencies
+add_custom_target(nodejs_program ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/node_modules) 
+add_dependencies(LookingGlassPT nodejs_program)
+
+file(COPY vertex.vert DESTINATION .)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy
+                   ${CMAKE_SOURCE_DIR}/fragment.frag $<TARGET_FILE_DIR:${PROJECT_NAME}>/fragment.frag)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                   COMMAND ${CMAKE_COMMAND} -E copy
+                   ${CMAKE_SOURCE_DIR}/vertex.vert $<TARGET_FILE_DIR:${PROJECT_NAME}>/vertex.vert)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET LookingGlassPT PROPERTY CXX_STANDARD 20)

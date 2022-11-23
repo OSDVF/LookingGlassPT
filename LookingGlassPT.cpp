@@ -9,6 +9,7 @@
 #include <imgui.h>
 #include "impl/imgui_impl_opengl3.h"
 #include "impl/imgui_impl_sdl.h"
+#include "imgui_internal.h"
 #include "App.h"
 
 ImGuiIO io;
@@ -23,13 +24,11 @@ int main()
 	/* Request opengl 3.2 context.
 	 * SDL doesn't have the ability to choose which profile at this time of writing,
 	 * but it should default to the core profile */
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 
-	/* Turn on double buffering with a 24bit Z buffer.
-	 * You may need to change this to 16 or 32 for your system */
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
 	auto windowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
 	SDL_Window* window = SDL_CreateWindow("Looking Glass Path Tracer Demo", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
@@ -48,7 +47,7 @@ int main()
 
 	// Setup Platform/Renderer backends
 	ImGui_ImplSDL2_InitForOpenGL(window, context);
-	ImGui_ImplOpenGL3_Init("#version 430");
+	ImGui_ImplOpenGL3_Init("#version 420");
 
 	glewExperimental = true;
 	if (glewInit() != GLEW_OK) {
@@ -65,25 +64,29 @@ int main()
 		SDL_Event event;
 		if (SDL_WaitEvent(&event))
 		{
-			ImGui_ImplSDL2_ProcessEvent(&event);
 			switch (event.type)
 			{
 			case SDL_QUIT:
 				playing = false;
 				break;
 			case SDL_MOUSEMOTION:
+				ImGui_ImplSDL2_ProcessEvent(&event);
 				draw(window, event);
 				break;
 			case SDL_MOUSEBUTTONDOWN:
+				ImGui_ImplSDL2_ProcessEvent(&event);
 				draw(window, event);
 				break;
 			case SDL_MOUSEBUTTONUP:
+				ImGui_ImplSDL2_ProcessEvent(&event);
 				draw(window, event);
 				break;
 			case SDL_MOUSEWHEEL:
+				ImGui_ImplSDL2_ProcessEvent(&event);
 				draw(window, event);
 				break;
-			case SDL_KEYUP: /* fallthrough */
+			case SDL_KEYUP:
+				ImGui_ImplSDL2_ProcessEvent(&event);
 				switch (event.key.keysym.sym)
 				{
 				case SDLK_ESCAPE:
@@ -103,10 +106,9 @@ int main()
 				default:
 					break;
 				}
+				break;
 			case SDL_KEYDOWN:
-				printf("`%c' was %s\n",
-					event.key.keysym.sym,
-					(event.key.state == SDL_PRESSED) ? "pressed" : "released");
+				ImGui_ImplSDL2_ProcessEvent(&event);
 				draw(window, event);
 				break;
 			}
@@ -139,9 +141,6 @@ void draw(SDL_Window* window, SDL_Event event)
 	App::draw(io, event);
 
 	ImGui::Render();
-	glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
-	glClearColor(0.0, 1.0, 0.0, 1.0);
-	glClear(GL_COLOR_BUFFER_BIT);
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 	SDL_GL_SwapWindow(window);
