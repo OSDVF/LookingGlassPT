@@ -111,6 +111,16 @@ int main()
 				ImGui_ImplSDL2_ProcessEvent(&event);
 				draw(window, event);
 				break;
+			case SDL_WINDOWEVENT:
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				if (event.window.event == SDL_WINDOWEVENT_RESIZED)
+				{
+					float w = event.window.data1;
+					float h = event.window.data2;
+					glViewport(0, 0, w, h);
+				}
+				draw(window, event);
+				break;
 			}
 		}
 		else
