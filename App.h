@@ -83,6 +83,29 @@ public:
 		// Transfer data to fullScreenVertexBuffer
 		glNamedBufferData(fullScreenVertexBuffer, vertices.size() * sizeof(glm::vec2), vertices.data(), GL_STATIC_DRAW);
 		GlHelpers::setVertexAttrib(fullScreenVAO, 0, 2, GL_FLOAT, fullScreenVertexBuffer, 0, sizeof(glm::vec2));
+
+		GLuint calibrationBlockI = glGetUniformBlockIndex(program, "Calibration");
+		GLint blockSize;
+		glGetActiveUniformBlockiv(program, calibrationBlockI, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
+
+		auto calibrationForShader = calibration.forShader();
+		if (blockSize != sizeof(calibrationForShader))
+		{
+			std::cerr << "Bad shader memory layout. Calibration block is " << blockSize << " bytes, but should be " << sizeof(calibrationForShader) << std::endl;
+		}
+
+		/*const GLchar* names[] = {"pitch", "slope","center"};
+		GLuint indices[3];
+		glGetUniformIndices(program, 3, names, indices);
+
+		GLint offset[3];
+		glGetActiveUniformsiv(program, 3, indices, GL_UNIFORM_OFFSET, offset);
+		*/
+		GLuint uboHandle;
+		glGenBuffers(1, &uboHandle);
+		glBindBuffer(GL_UNIFORM_BUFFER, uboHandle);
+		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_DRAW);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboHandle);
 	}
 	static inline float f;
 	static inline int counter = 0;

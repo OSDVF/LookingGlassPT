@@ -3,12 +3,15 @@
 out vec4 OutColor;
 
 // Based on https://www.shadertoy.com/view/ttXSDN
-uniform float pitch  = 246.93183799163623;
-uniform float slope  = -0.1850851917072664;
-uniform float center = 0.7301818132400513;
-uniform float iTime = 0;
-uniform vec2 iResolution = vec2(640,480);
-uniform vec2 iMouse = vec2(0,0);
+layout(shared)
+uniform Calibration {
+    float pitch;
+    float slope;
+    float center;
+} uCalibration;
+float iTime = 0;
+vec2 iResolution = vec2(640,480);
+vec2 iMouse = vec2(0,0);
 
 float screenSize = 2.0; // Just do everything in screenSizes
 
@@ -28,9 +31,9 @@ void calcRayForPixel(vec2 pix, out vec3 rayOrigin, out vec3 rayDir) {
     
     // Get the current view for this subpixel
     float view = screenCoord.x;
-	view += screenCoord.y * slope;
-	view *= pitch;
-	view -= center;
+	view += screenCoord.y * uCalibration.slope;
+	view *= uCalibration.pitch;
+	view -= uCalibration.center;
 	view = 1.0 - mod(view + ceil(abs(view)), 1.0);
     
     // Calculate the ray dir assuming pixels of a given view converge

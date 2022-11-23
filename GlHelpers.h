@@ -58,7 +58,7 @@ public:
 		glGetShaderiv(shader, GL_COMPILE_STATUS, &isCompiled);
 		if (isCompiled == GL_FALSE)
 		{
-			std::cerr << "Shader compilation failed";
+			std::cerr << "Shader compilation failed" << std::endl;
 			GLint maxLength = 0;
 			glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &maxLength);
 			maxLength = std::max(maxLength, 512);

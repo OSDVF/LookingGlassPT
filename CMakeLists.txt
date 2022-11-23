@@ -57,10 +57,11 @@ add_dependencies(LookingGlassPT nodejs_program)
 
 set(SHADERS vertex.vert fragment.frag)
 foreach(CurrentShader IN LISTS SHADERS)
-    add_custom_command(
-                TARGET LookingGlassPT PRE_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CurrentShader} ${CMAKE_CURRENT_BINARY_DIR}
-                COMMENT "Copying shader: ${CurrentShader}")
+    add_custom_command(OUTPUT ${CurrentShader}
+        MAIN_DEPENDENCY ${PROJECT_SOURCE_DIR}/${CurrentShader}
+        COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/${CurrentShader} ${CMAKE_CURRENT_BINARY_DIR})
+    add_custom_target("${CurrentShader}target" ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CurrentShader}) 
+    add_dependencies(LookingGlassPT "${CurrentShader}target")
 endforeach()
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
