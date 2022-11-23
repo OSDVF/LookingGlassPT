@@ -55,13 +55,13 @@ add_custom_command(OUTPUT node_modules COMMAND npm install) # install dependenci
 add_custom_target(nodejs_program ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/node_modules) 
 add_dependencies(LookingGlassPT nodejs_program)
 
-file(COPY vertex.vert DESTINATION .)
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-                   COMMAND ${CMAKE_COMMAND} -E copy
-                   ${CMAKE_SOURCE_DIR}/fragment.frag $<TARGET_FILE_DIR:${PROJECT_NAME}>/fragment.frag)
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-                   COMMAND ${CMAKE_COMMAND} -E copy
-                   ${CMAKE_SOURCE_DIR}/vertex.vert $<TARGET_FILE_DIR:${PROJECT_NAME}>/vertex.vert)
+set(SHADERS vertex.vert fragment.frag)
+foreach(CurrentShader IN LISTS SHADERS)
+    add_custom_command(
+                TARGET LookingGlassPT PRE_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CurrentShader} ${CMAKE_CURRENT_BINARY_DIR}
+                COMMENT "Copying shader: ${CurrentShader}")
+endforeach()
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET LookingGlassPT PROPERTY CXX_STANDARD 20)

@@ -43,6 +43,10 @@ public:
 		t.open(filename);
 		t.seekg(0, std::ios::end);
 		GLint size = t.tellg();
+		if (size <= 0)
+		{
+			throw std::runtime_error(std::format("Shader file {} not found or empty.", filename));
+		}
 		std::string buffer(size, ' ');
 		t.seekg(0);
 		t.read(&buffer[0], size);
