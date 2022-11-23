@@ -28,6 +28,14 @@ std::filesystem::path relativeToExecutable(std::string filename)
 	return executablePath.parent_path() / filename;
 }
 
+struct {
+	GLint uTime;
+	GLint uResolution;
+	GLint uWindowSize;
+	GLint uWindowPos;
+	GLint uMouse;
+} uniforms;
+
 class App {
 public:
 	static inline GLuint fShader;
@@ -36,8 +44,12 @@ public:
 	static inline Calibration calibration;
 	static inline GLuint fullScreenVAO;
 	static inline GLuint fullScreenVertexBuffer;
-	static void setup(ImGuiIO& io)
+	static inline float windowWidth;
+	static inline float windowHeight;
+	static void setup(ImGuiIO& io, int x, int y, int w, int h)
 	{
+		windowWidth = w;
+		windowWidth = h;
 		try {
 			try {
 				std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
@@ -69,7 +81,7 @@ public:
 		{
 			std::string infoLog(512, ' ');
 			glGetProgramInfoLog(success, 512, NULL, (GLchar*)infoLog.c_str());
-			std::cerr << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n" << infoLog << std::endl;
+			std::cerr << "Shader linkg failed:\n" << infoLog << std::endl;
 		}
 		glCreateVertexArrays(1, &fullScreenVAO);
 		// Assign to fullScreenVertexBuffer
@@ -106,13 +118,51 @@ public:
 		glBindBuffer(GL_UNIFORM_BUFFER, uboHandle);
 		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_DRAW);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboHandle);
+
+		uniforms = {
+			glGetUniformLocation(program, "uTime"),
+			glGetUniformLocation(program, "uResolution"),
+			glGetUniformLocation(program, "uWindowSize"),
+			glGetUniformLocation(program, "uWindowPos"),
+			glGetUniformLocation(program, "uMouse"),
+		};
+		glBindVertexArray(fullScreenVAO);
+		glUseProgram(program);
+		glUniform1f(uniforms.uTime, 0);
+		glUniform2f(uniforms.uWindowSize, w, h);
+		glUniform2f(uniforms.uWindowPos, x, y);
+		glUniform2f(uniforms.uMouse, 0.5f, 0.5f);
+		glUniform2f(uniforms.uResolution, calibration.screenW, calibration.screenH);
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	}
 	static inline float f;
 	static inline int counter = 0;
+	static inline float frame = 1;
 	static void draw(ImGuiIO& io, SDL_Event event)
 	{
+		switch (event.type)
+		{
+		case SDL_WINDOWEVENT:
+			switch (event.window.event)
+			{
+			case SDL_WINDOWEVENT_RESIZED:
+				glUniform2f(uniforms.uWindowSize, event.window.data1, event.window.data2);
+				//std::cout << "W:" << event.window.data1 << "H:" << event.window.data2 << std::endl;
+				break;
+			case SDL_WINDOWEVENT_MOVED:
+				glUniform2f(uniforms.uWindowPos, event.window.data1, event.window.data2);
+				//std::cout << "X:" << event.window.data1 << "Y:" << event.window.data2 << std::endl;
+
+				break;
+			}
+			break;
+		case SDL_MOUSEMOTION:
+			glUniform2f(uniforms.uMouse, event.motion.x, event.motion.y);
+			break;
+		}
 		glBindVertexArray(fullScreenVAO);
 		glUseProgram(program);
+		glUniform1f(uniforms.uTime, frame);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
 		ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
@@ -128,5 +178,6 @@ public:
 
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::End();
+		frame++;
 	}
 };

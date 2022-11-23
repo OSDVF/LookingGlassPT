@@ -11,7 +11,10 @@
 #include "impl/imgui_impl_sdl.h"
 #include "imgui_internal.h"
 #include "App.h"
-
+#define WINDOW_X 500
+#define WINDOW_Y 100
+#define WINDOW_W 640
+#define WINDOW_H 480
 ImGuiIO io;
 int main()
 {
@@ -31,8 +34,8 @@ int main()
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
 	auto windowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
-	SDL_Window* window = SDL_CreateWindow("Looking Glass Path Tracer Demo", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-		640, 480, windowFlags);
+	SDL_Window* window = SDL_CreateWindow("Looking Glass Path Tracer Demo", WINDOW_X, WINDOW_Y,
+		WINDOW_W, WINDOW_H, windowFlags);
 
 	assert(window);
 	SDL_GLContext context = SDL_GL_CreateContext(window);
@@ -58,7 +61,7 @@ int main()
 	bool playing = true;
 	bool fullscreen = false;
 
-	App::setup(io);
+	App::setup(io, WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H);
 	while (playing)
 	{
 		SDL_Event event;

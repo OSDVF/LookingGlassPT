@@ -5,15 +5,15 @@
 
 struct Calibration {
 	// Based on https://github.com/dormon/3DApps/blob/master/src/holoCalibration.h
-	float pitch;
-	float slope = -0.1850851917072664;
-	float center = 0.7301818132400513;
+	float pitch = 47.6004f;
+	float slope = -5.48489;
+	float center = -0.400272;
 	float viewCone;
 	float invView;
 	float verticalAngle;
-	float DPI;
-	float screenW;
-	float screenH;
+	float DPI = 338;
+	float screenW = 2560;
+	float screenH = 1600;
 	float flipImageX;
 	float flipImageY;
 	float flipSubp;
@@ -22,10 +22,10 @@ struct Calibration {
 	float tilt() const { return (screenH / (screenW * slope)) * ((flipImageX == 1.0) ? -1 : 1); }
 	float subp() const { return 1.0 / (screenW * 3.0); }
 
-	struct { float pitch; float slope; float center; } forShader()
+	struct { float pitch; float tilt; float center; } forShader()
 	{
 		return {
-			recalculatedPitch(), slope, center
+			recalculatedPitch(), tilt(), center
 		};
 	}
 

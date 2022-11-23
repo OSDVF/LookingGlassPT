@@ -3,15 +3,17 @@
 out vec4 OutColor;
 
 // Based on https://www.shadertoy.com/view/ttXSDN
-layout(shared)
+layout(std140)
 uniform Calibration {
     float pitch;
-    float slope;
+    float tilt;
     float center;
 } uCalibration;
-float iTime = 0;
-vec2 iResolution = vec2(640,480);
-vec2 iMouse = vec2(0,0);
+uniform float uTime = 0;
+uniform vec2 uResolution = vec2(640,480);
+uniform vec2 uWindowSize = vec2(640,480);
+uniform vec2 uWindowPos;
+uniform vec2 uMouse = vec2(0.5,0.5);
 
 float screenSize = 2.0; // Just do everything in screenSizes
 
@@ -21,17 +23,17 @@ float screenSize = 2.0; // Just do everything in screenSizes
 // to control these)
 void calcRayForPixel(vec2 pix, out vec3 rayOrigin, out vec3 rayDir) {
     // Mouse controlled focal distance and viewpoint spread
-    float screenWidth = (iResolution.x/iResolution.y) * screenSize;
-    float focalLeft   = -((iMouse.x/iResolution.x)-0.45)*2.0;  
+    float screenWidth = (uWindowSize.x/uWindowSize.y) * screenSize;
+    float focalLeft   = -((uMouse.x/uWindowSize.x)-0.45)*2.0;  
     float focalRight  = screenWidth - focalLeft;
-    float focalDist   = -1.0-(iMouse.y/iResolution.y) * 5.0; // -2.0 is a good default
+    float focalDist   = -1.0-(uMouse.y/uWindowSize.y) * 5.0; // -2.0 is a good default
     
     // Normalized pixel coordinates (from 0 to 1)
-    vec2 screenCoord = pix/iResolution.xy;
+    vec2 screenCoord = pix/uWindowSize.xy;
     
     // Get the current view for this subpixel
     float view = screenCoord.x;
-	view += screenCoord.y * uCalibration.slope;
+	view += screenCoord.y * uCalibration.tilt;
 	view *= uCalibration.pitch;
 	view -= uCalibration.center;
 	view = 1.0 - mod(view + ceil(abs(view)), 1.0);
@@ -266,7 +268,8 @@ vec2 texCoords( in vec3 pos, int mid )
 
 void calcCamera( out vec3 ro, out vec3 ta )
 {
-	float an = 0.1*sin(0.1*iTime);
+	float an = 0.1*sin(0.1*uTime
+   );
 	ro = vec3( 5.0*cos(an), 0.5, 5.0*sin(an) );
     ta = vec3( 0.0, 1.0, 0.0 );
 }
@@ -324,7 +327,7 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 		// shading		
 		vec3 mate = vec3(0.0);
         #if 0
-	    bool lr = fragCoord.x < iResolution.x/2.0;
+	    bool lr = fragCoord.x < uWindowSize.x/2.0;
         if( lr ) mate = vec3(1.0)*xorTexture( uv );
         else     mate = vec3(1.0)*xorTextureGradBox( uv, ddx_uv, ddy_uv );
         #else
@@ -347,12 +350,12 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 	col = pow( col, vec3(0.4545) );
 
     // line
-	return col;// * smoothstep( 1.0, 2.0, abs(fragCoord.x-iResolution.x/2.0) );
+	return col;// * smoothstep( 1.0, 2.0, abs(fragCoord.x-uWindowSize.x/2.0) );
 }
 
 
 void main() {
-    vec2 pixelCoord = gl_FragCoord.xy * iResolution;
+    vec2 pixelCoord = gl_FragCoord.xy;
     vec3 col = vec3(rayTraceSubPixel(pixelCoord).r,
                     rayTraceSubPixel(pixelCoord + vec2(1.0/3.0, 0.0)).g, 
                     rayTraceSubPixel(pixelCoord + vec2(2.0/3.0, 0.0)).b);
