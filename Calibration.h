@@ -2,6 +2,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include <ostream>
+#include <glm/glm.hpp>
 
 struct Calibration {
 	// Based on https://github.com/dormon/3DApps/blob/master/src/holoCalibration.h
@@ -22,10 +23,10 @@ struct Calibration {
 	float tilt() const { return (screenH / (screenW * slope)) * ((flipImageX == 1.0) ? -1 : 1); }
 	float subp() const { return 1.0 / (screenW * 3.0); }
 
-	struct { float pitch; float tilt; float center; } forShader()
+	struct { float pitch; float tilt; float center; glm::vec2 resolution; } forShader()
 	{
 		return {
-			recalculatedPitch(), tilt(), center
+			recalculatedPitch(), tilt(), center, {screenW, screenH}
 		};
 	}
 

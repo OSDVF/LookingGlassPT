@@ -30,7 +30,6 @@ std::filesystem::path relativeToExecutable(std::string filename)
 
 struct {
 	GLint uTime;
-	GLint uResolution;
 	GLint uWindowSize;
 	GLint uWindowPos;
 	GLint uMouse;
@@ -121,7 +120,6 @@ public:
 
 		uniforms = {
 			glGetUniformLocation(program, "uTime"),
-			glGetUniformLocation(program, "uResolution"),
 			glGetUniformLocation(program, "uWindowSize"),
 			glGetUniformLocation(program, "uWindowPos"),
 			glGetUniformLocation(program, "uMouse"),
@@ -132,7 +130,6 @@ public:
 		glUniform2f(uniforms.uWindowSize, w, h);
 		glUniform2f(uniforms.uWindowPos, x, y);
 		glUniform2f(uniforms.uMouse, 0.5f, 0.5f);
-		glUniform2f(uniforms.uResolution, calibration.screenW, calibration.screenH);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 	}
 	static inline float f;
@@ -152,7 +149,6 @@ public:
 			case SDL_WINDOWEVENT_MOVED:
 				glUniform2f(uniforms.uWindowPos, event.window.data1, event.window.data2);
 				//std::cout << "X:" << event.window.data1 << "Y:" << event.window.data2 << std::endl;
-
 				break;
 			}
 			break;

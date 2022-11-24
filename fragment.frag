@@ -3,15 +3,16 @@
 out vec4 OutColor;
 
 // Based on https://www.shadertoy.com/view/ttXSDN
-layout(std140)
+layout(shared)
 uniform Calibration {
     float pitch;
     float tilt;
     float center;
+    float subp;
+    vec2 resolution;
 } uCalibration;
 uniform float uTime = 0;
-uniform vec2 uResolution = vec2(640,480);
-uniform vec2 uWindowSize = vec2(640,480);
+uniform vec2 uWindowSize = vec2(500,500);
 uniform vec2 uWindowPos;
 uniform vec2 uMouse = vec2(0.5,0.5);
 
