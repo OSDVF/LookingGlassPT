@@ -23,10 +23,17 @@ struct Calibration {
 	float tilt() const { return (screenH / (screenW * slope)) * ((flipImageX == 1.0) ? -1 : 1); }
 	float subp() const { return 1.0 / (screenW * 3.0); }
 
-	struct { float pitch; float tilt; float center; glm::vec2 resolution; } forShader()
+	typedef struct ForShader {
+		float pitch;
+		float tilt;
+		float center;
+		float subp;//This is not really used
+		glm::vec2 resolution;
+	};
+	ForShader forShader()
 	{
 		return {
-			recalculatedPitch(), tilt(), center, {screenW, screenH}
+			recalculatedPitch(), tilt(), center, subp(), {screenW, screenH}
 		};
 	}
 

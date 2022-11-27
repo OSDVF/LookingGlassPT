@@ -1,5 +1,9 @@
-#version 420
-
+//!#version 420
+#ifdef FLAT_SCREEN
+#define getRay getFlatScreenRay
+#else
+#define getRay getLookingGlassRay
+#endif
 out vec4 OutColor;
 
 // Based on https://www.shadertoy.com/view/ttXSDN
@@ -8,7 +12,7 @@ uniform Calibration {
     float pitch;
     float tilt;
     float center;
-    float subp;
+    float subp;//This is not really used
     vec2 resolution;
 } uCalibration;
 uniform float uTime = 0;
@@ -16,13 +20,22 @@ uniform vec2 uWindowSize = vec2(500,500);
 uniform vec2 uWindowPos;
 uniform vec2 uMouse = vec2(0.5,0.5);
 
+uniform mat4 uView; //
+uniform mat4 uProj;
+
+struct Ray {
+    vec3 origin;
+    vec3 direction;
+};
+
+
 float screenSize = 2.0; // Just do everything in screenSizes
 
 // A single view will _converge_ on a point about two screen-heights 
 // from the device. Assume focalDist is ~2 screenSizehs backwards, 
 // and from ~-0.22222 to 2 screenSizes on the x axis (use mouse.xy 
 // to control these)
-void calcRayForPixel(vec2 pix, out vec3 rayOrigin, out vec3 rayDir) {
+void getLookingGlassRay(vec2 pix, out Ray ray) {
     // Mouse controlled focal distance and viewpoint spread
     float screenWidth = (uWindowSize.x/uWindowSize.y) * screenSize;
     float focalLeft   = -((uMouse.x/uWindowSize.x)-0.45)*2.0;  
@@ -47,11 +60,22 @@ void calcRayForPixel(vec2 pix, out vec3 rayOrigin, out vec3 rayDir) {
     vec3 pxFoc = vec3(mix(focalLeft, focalRight, view), 0.5, focalDist);
     vec3 pxDir = pxFoc - pxPos; pxDir /= length(pxDir);
     vec3 pxOri = pxPos + (1.0 * pxDir); // <- Increase for protruding objects
-    rayOrigin  = pxOri; rayDir = -pxDir;
+    vec3 rayOrigin  = pxOri; 
+    vec3 rayDir = -pxDir;
     
     // Offset and Swizzle for IQ's Coordinate System
     rayOrigin = vec3(-rayOrigin.z, rayOrigin.y, rayOrigin.x) + vec3(3.2,0.0,-0.9);
     rayDir = vec3(-rayDir.z, rayDir.y, rayDir.x);
+
+    ray = Ray(rayOrigin, rayDir);
+}
+
+void getFlatScreenRay(vec2 pix, out Ray ray) {
+  vec4 dir = inverse(uProj * uView)*vec4(pix,1,1);
+  dir.xyz/=dir.w;
+  vec3 pos = vec3(inverse(uProj*uView)*vec4(0,0,0,1));
+
+  ray = Ray(pos, normalize(dir.xyz));
 }
 
 
@@ -297,16 +321,16 @@ vec3 doLighting( in vec3 pos, in vec3 nor, in float occ, in vec3 rd )
 //===============================================================================================
 
 vec3 rayTraceSubPixel(vec2 fragCoord) {
-    vec3 ro, rd, ddx_ro, ddx_rd, ddy_ro, ddy_rd;
-	calcRayForPixel( fragCoord + vec2(0.0,    0.0), ro, rd );
-	calcRayForPixel( fragCoord + vec2(1.0/3.0,0.0), ddx_ro, ddx_rd );
-	calcRayForPixel( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
+    Ray ray;
+    getRay(fragCoord, ray);
+	//getLookignGlassRay( fragCoord + vec2(1.0/3.0,0.0), ddx_ro, ddx_rd );
+	//getLookignGlassRay( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
 		
     // trace
 	vec3 pos, nor;
 	float occ;
     int mid;
-    float t = intersect( ro, rd, pos, nor, occ, mid );
+    float t = intersect( ray.origin, ray.direction, pos, nor, occ, mid );
 
 	vec3 col = vec3(0.9);
 	if( mid!=-1 )
@@ -317,13 +341,11 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 		// -----------------------------------------------------------------------
 
 		// computer ray differentials
-		vec3 ddx_pos = ddx_ro - ddx_rd*dot(ddx_ro-pos,nor)/dot(ddx_rd,nor);
-		vec3 ddy_pos = ddy_ro - ddy_rd*dot(ddy_ro-pos,nor)/dot(ddy_rd,nor);
+		//vec3 ddx_pos = ddx_ro - ddx_rd*dot(ddx_ro-pos,nor)/dot(ddx_rd,nor);
+		//vec3 ddy_pos = ddy_ro - ddy_rd*dot(ddy_ro-pos,nor)/dot(ddy_rd,nor);
 
 		// calc texture sampling footprint		
 		vec2     uv = texCoords(     pos, mid );
-		vec2 ddx_uv = texCoords( ddx_pos, mid ) - uv;
-		vec2 ddy_uv = texCoords( ddy_pos, mid ) - uv;
        
 		// shading		
 		vec3 mate = vec3(0.0);
@@ -333,12 +355,13 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
         else     mate = vec3(1.0)*xorTextureGradBox( uv, ddx_uv, ddy_uv );
         #else
         //mate = vec3(1.0)*xorTexture( uv );
-        mate = vec3(1.0)*xorTextureGradBox( uv, ddx_uv, ddy_uv );
+        //mate = vec3(1.0)*xorTextureGradBox( uv, ddx_uv, ddy_uv );
+        mate = vec3(1.0)*xorTextureGradBox( uv, dFdx(uv), dFdy(uv));
         #endif
         mate = pow( mate, vec3(1.5) );
         
         // lighting	
-		vec3 lin = doLighting( pos, nor, occ, rd );
+		vec3 lin = doLighting( pos, nor, occ, ray.direction );
 
         // combine lighting with material		
 		col = mate * lin;
@@ -354,12 +377,15 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 	return col;// * smoothstep( 1.0, 2.0, abs(fragCoord.x-uWindowSize.x/2.0) );
 }
 
+// TODO: subroutine selection
 
 void main() {
     vec2 pixelCoord = gl_FragCoord.xy;
-    vec3 col = vec3(rayTraceSubPixel(pixelCoord).r,
-                    rayTraceSubPixel(pixelCoord + vec2(1.0/3.0, 0.0)).g, 
-                    rayTraceSubPixel(pixelCoord + vec2(2.0/3.0, 0.0)).b);
+    vec3 col = vec3(0);
+    for(int subpI = 0; subpI < 3; subpI++)
+    {
+        col[subpI] = rayTraceSubPixel(pixelCoord + vec2(subpI/3.0, 0.0))[subpI];
+    }
 	
     // output
 	OutColor = vec4( col, 1.0 );

@@ -38,6 +38,7 @@ struct {
 class App {
 public:
 	static inline GLuint fShader;
+	static inline GLuint fFlatShader;
 	static inline GLuint vShader;
 	static inline GLuint program;
 	static inline Calibration calibration;
@@ -45,8 +46,12 @@ public:
 	static inline GLuint fullScreenVertexBuffer;
 	static inline float windowWidth;
 	static inline float windowHeight;
+	static inline enum class ScreenType {
+		Flat = 0, LookingGlass = 1
+	} ScreenType;
 	static void setup(ImGuiIO& io, int x, int y, int w, int h)
 	{
+		ScreenType = ScreenType::LookingGlass;
 		windowWidth = w;
 		windowWidth = h;
 		try {
@@ -66,22 +71,16 @@ public:
 		{
 			std::cerr << e.what() << std::endl;
 			std::cerr << "Calibration failed. Using default values." << std::endl;
+			ScreenType = ScreenType::Flat;
 		}
-
-		GlHelpers::compileShader<GL_VERTEX_SHADER>(relativeToExecutable("vertex.vert").string(), vShader);
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(relativeToExecutable("fragment.frag").string(), fShader);
+		std::string fragSource = relativeToExecutable("fragment.frag").string();
+		GlHelpers::compileShader<GL_VERTEX_SHADER>(relativeToExecutable("vertex.vert").string(), vShader, {});
+		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, {});
+		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN" });
 		program = glCreateProgram();
 		glAttachShader(program, vShader);
-		glAttachShader(program, fShader);
-		glLinkProgram(program);
-		int success;
-		glGetProgramiv(program, GL_LINK_STATUS, &success);
-		if (!success)
-		{
-			std::string infoLog(512, ' ');
-			glGetProgramInfoLog(success, 512, NULL, (GLchar*)infoLog.c_str());
-			std::cerr << "Shader linkg failed:\n" << infoLog << std::endl;
-		}
+		glAttachShader(program, ScreenType == ScreenType::Flat ? fFlatShader : fShader);
+		GlHelpers::linkProgram(program);
 		glCreateVertexArrays(1, &fullScreenVAO);
 		// Assign to fullScreenVertexBuffer
 		glCreateBuffers(1, &fullScreenVertexBuffer);
@@ -162,6 +161,18 @@ public:
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
 		ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+		if (ImGui::RadioButton("Looking Glass", (int*)&ScreenType, (int)ScreenType::LookingGlass))
+		{
+			glDetachShader(program, fFlatShader);
+			glAttachShader(program, fShader);
+			GlHelpers::linkProgram(program);
+		}
+		if (ImGui::RadioButton("Flat", (int*)&ScreenType, (int)ScreenType::Flat))
+		{
+			glDetachShader(program, fShader);
+			glAttachShader(program, fFlatShader);
+			GlHelpers::linkProgram(program);
+		}
 
 		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
 

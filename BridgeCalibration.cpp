@@ -10,7 +10,7 @@
 #include <process.hpp>
 #include <nlohmann/json.hpp>
 #include "alert_exception.h"
-#ifdef WIN32
+#ifdef _WIN32
 #include <io.h>
 #else
 #include <unistd.h>
