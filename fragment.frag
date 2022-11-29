@@ -62,6 +62,7 @@ float screenSize = 2.0; // Just do everything in screenSizes
 // and from ~-0.22222 to 2 screenSizes on the x axis (use mouse.xy 
 // to control these)
 void getLookingGlassRay(vec2 pix, out Ray ray) {
+    vec2 uMouse = vec2(0.5,0.5);
     // Mouse controlled focal distance and viewpoint spread
     float screenWidth = (uWindowSize.x/uWindowSize.y) * screenSize;
     float focalLeft   = -((uMouse.x/uWindowSize.x)-0.45)*2.0;  
@@ -82,8 +83,9 @@ void getLookingGlassRay(vec2 pix, out Ray ray) {
     // at points along a line segment floating "focalDist" above the display.
     // TODO: Take into account the refraction of the acrylic, which changes
     // the rays' angle of attack as they converge on pxFoc
-    vec3 pxPos = vec3(screenCoord.x * screenWidth, screenCoord.y * screenSize, 0.0);
-    vec3 pxFoc = vec3(mix(focalLeft, focalRight, view), 0.5, focalDist);
+    mat4x3 InvView = mat4x3(inverse(uView));
+    vec3 pxPos = InvView[0] * screenCoord.x * screenWidth + InvView[1] * screenCoord.y * screenSize + InvView[3];
+    vec3 pxFoc = InvView[0] * mix(focalLeft, focalRight, view) + InvView[1] * 0.5 + InvView[2] * focalDist + InvView[3];
     vec3 pxDir = pxFoc - pxPos; pxDir /= length(pxDir);
     vec3 pxOri = pxPos + (1.0 * pxDir); // <- Increase for protruding objects
     vec3 rayOrigin  = pxOri; 
@@ -93,29 +95,47 @@ void getLookingGlassRay(vec2 pix, out Ray ray) {
 }
 
 
-float Camera_fovY = tan(radians(60));
+const float viewCone = 0.698131701; // 40 deg in rad
 
-/*void getFlatScreenRay(vec2 pix, out Ray ray)
-{
-    float Camera_fovX = (uWindowSize.x * Camera_fovY) / uWindowSize.y;
-    // Apply FOV = create perspective projection
-    float a = Camera_fovX * pix.x;
-    float b = Camera_fovY * pix.y;
+uniform vec4 tile = vec4(5,9,45,45);
+Ray generateChaRay(){
+    vec2 texCoords = vNDCpos*.5f+.5f;
+	vec3 nuv = vec3(texCoords, 0.0f);
 
-    vec3 dir = normalize(a * vec3(1,0,0) + b * vec3(0,1,0) + vec3(0,0,1));
+	nuv.z = (texCoords.x + texCoords.y * uCalibration.tilt) * uCalibration.pitch - uCalibration.center;
+	nuv.z = fract(nuv.z);
+	nuv.z = (1.0 - nuv.z);
+	vec2 vvPos = texCoords*2.f-1.f;//texArr(nuv);
 
-    ray= Ray(vec3(0,0,0), dir);
-}*/
+    int viewId = int(nuv.z*tile.z);
 
-/*void getFlatScreenRay(vec2 pix, out Ray ray) {
-    vec4 screenSpaceFar = vec4(vNDCpos, 1.0, 0.0);
-    vec4 screenSpaceNear = vec4(vNDCpos, 0.0, 0.0);
-    vec4 far = inverse(uProj * uView) * screenSpaceFar;
-    far /= far.w;
-    vec4 near = inverse(uProj * uView) * screenSpaceNear;
-    near /= near.w;
-    ray = Ray(vec3(0), normalize(far.xyz - near.xyz));
-}*/
+    mat4 newView = uView;
+    mat4 newProj = uProj;
+
+  
+    float aspect = 512.f/512.f;
+    float fovy   = 3.1415/2.f;
+    float ttt = float(viewId) / float(45.f - 1);
+    float d = 0.7f;
+    float S = 0.5f*d*tan(viewCone);
+    float s = S-2*ttt*S;
+
+    newView[3][0] += s;
+    newProj[2][0] += s/(d*aspect*tan(fovy/2));
+
+    vec4 dir = inverse(newProj*newView)*vec4(vvPos,1,1);
+    dir.xyz/=dir.w;
+    vec3 pos = vec3(inverse(newProj*newView)*vec4(0,0,0,1));
+
+    Ray ray;
+    ray.origin=pos;
+    ray.direction=normalize(dir.xyz);
+    return ray;
+}
+
+void cgetLookingGlassRay(vec2 pix, out Ray ray) {
+    ray = generateChaRay();
+}
 
 void getFlatScreenRay(vec2 pix, out Ray ray){
   vec4 dir = inverse(uProj * uView)*vec4(pix,1,1);
@@ -123,7 +143,7 @@ void getFlatScreenRay(vec2 pix, out Ray ray){
   vec3 pos = vec3(inverse(uView)*vec4(0,0,0,1));
 
   ray = Ray(pos, normalize(dir.xyz));
-  ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x) + vec3(4.2,1,-0.4);
+  ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x) + vec3(5.2,0.5,-0.4);
 }
 
 //https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
@@ -533,6 +553,7 @@ vec3 doLighting( in vec3 pos, in vec3 nor, in float occ, in vec3 rd )
 vec3 rayTraceSubPixel(vec2 fragCoord) {
     Ray ray;
     getRay(fragCoord, ray);
+    //return ray.direction;
 	//getLookignGlassRay( fragCoord + vec2(1.0/3.0,0.0), ddx_ro, ddx_rd );
 	//getLookignGlassRay( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
     #if 0

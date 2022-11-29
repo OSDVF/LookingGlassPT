@@ -61,6 +61,7 @@ int main(int argc, const char ** argv)
 	bool playing = true;
 	bool fullscreen = false;
 	bool forceFlat = false;
+	bool powerSave = false;
 	if (argc > 1)
 	{
 		if (std::string("flat") == argv[2])
@@ -73,7 +74,7 @@ int main(int argc, const char ** argv)
 	while (playing)
 	{
 		SDL_Event event;
-		SDL_PollEvent(&event);
+		powerSave ? SDL_WaitEvent(&event) : SDL_PollEvent(&event);
 
 		switch (event.type)
 		{
@@ -99,7 +100,7 @@ int main(int argc, const char ** argv)
 			case SDLK_ESCAPE:
 				playing = 0;
 				break;
-			case 'f':
+			case SDLK_f:
 				fullscreen = !fullscreen;
 				if (fullscreen)
 				{
@@ -109,6 +110,9 @@ int main(int argc, const char ** argv)
 				{
 					SDL_SetWindowFullscreen(window, windowFlags);
 				}
+				break;
+			case SDLK_p:
+				powerSave = !powerSave;
 				break;
 			default:
 				break;

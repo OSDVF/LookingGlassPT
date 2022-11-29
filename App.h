@@ -165,11 +165,15 @@ public:
 	static inline float f;
 	static inline int counter = 0;
 	static inline float frame = 1;
+	static inline bool interactive = false;
 	static void draw(ImGuiIO& io, SDL_Event event)
 	{
 		auto now = SDL_GetPerformanceCounter();
 		float deltaTime = (now - lastTime) / (float)SDL_GetPerformanceFrequency();
-		person.Update(deltaTime, false, event);
+		if (interactive)
+		{
+			person.Update(deltaTime, false, event);
+		}
 		switch (event.type)
 		{
 		case SDL_WINDOWEVENT:
@@ -189,7 +193,10 @@ public:
 			}
 			break;
 		case SDL_MOUSEMOTION:
-			glUniform2f(uniforms.uMouse, event.motion.x, event.motion.y);
+			if (interactive)
+			{
+				glUniform2f(uniforms.uMouse, event.motion.x, event.motion.y);
+			}
 			break;
 		case SDL_KEYUP:
 			switch (event.key.keysym.sym)
@@ -198,7 +205,7 @@ public:
 				recompileFragmentSh();
 				GlHelpers::linkProgram(program);
 				break;
-			case SDL_KeyCode::SDLK_s:
+			case SDL_KeyCode::SDLK_l:
 				if (ScreenType == ScreenType::Flat)
 				{
 					ScreenType = ScreenType::LookingGlass;
@@ -209,6 +216,9 @@ public:
 					ScreenType = ScreenType::Flat;
 					swapShaders(fShader, fFlatShader);
 				}
+				break;
+			case SDL_KeyCode::SDLK_i:
+				interactive = !interactive;
 				break;
 			}
 			break;
