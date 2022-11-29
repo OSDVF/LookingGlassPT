@@ -1,3 +1,4 @@
+#pragma once
 #include <SDL.h>
 #include "UsbCalibration.h"
 #include "BridgeCalibration.h"
@@ -5,38 +6,12 @@
 #include <sstream>
 #include <array>
 #include <string>
-#include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "GlHelpers.h"
 #include "FirstPersonController.h"
-#ifdef WIN32
-#include <Windows.h>
-#endif
-
-/**
-* Resolves to a file in current working directory. But if it does not exists, resolves to file next to the executable
-*/
-std::filesystem::path relativeToExecutable(std::string filename)
-{
-	if (std::filesystem::exists(filename))
-	{
-		return filename;
-	}
-
-	std::filesystem::path executablePath;
-#ifdef WIN32
-	LPSTR exePath = new CHAR[MAX_PATH];
-	GetModuleFileNameA(NULL, exePath, MAX_PATH);
-	executablePath = std::filesystem::path(exePath);
-	delete[] exePath;
-#else
-	executablePath = std::filesystem::canonical("/proc/self/exe");
-#endif
-
-	return executablePath.parent_path() / filename;
-}
+#include "Helpers.h"
 
 struct {
 	GLint uTime;
@@ -100,7 +75,7 @@ public:
 			}
 		}
 		program = glCreateProgram();
-		GlHelpers::compileShader<GL_VERTEX_SHADER>(relativeToExecutable("vertex.vert").string(), vShader, {});
+		GlHelpers::compileShader<GL_VERTEX_SHADER>(Helpers::relativeToExecutable("vertex.vert").string(), vShader, {});
 		glAttachShader(program, vShader);
 		recompileFragmentSh();
 		GlHelpers::linkProgram(program);
@@ -168,10 +143,20 @@ public:
 	static void recompileFragmentSh()
 	{
 		// Will produce errors if the shader is not compiled yet but c'est la vie
-		glDetachShader(program, fFlatShader);
-		glDetachShader(program, fShader);
+		GLsizei count;
+		GLuint shaders[5];
+		glGetAttachedShaders(program, sizeof(shaders) / sizeof(GLuint), &count, shaders);
+		for (int i = 0; i < count; i++)
+		{
+			GLint shaderType;
+			glGetShaderiv(shaders[i], GL_SHADER_TYPE, &shaderType);
+			if (shaderType == GL_FRAGMENT_SHADER)
+			{
+				glDetachShader(program, shaders[i]);
+			}
+		}
 
-		std::string fragSource = relativeToExecutable("fragment.frag").string();
+		std::string fragSource = Helpers::relativeToExecutable("fragment.frag").string();
 		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, {});
 		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN" });
 		glAttachShader(program, ScreenType == ScreenType::Flat ? fFlatShader : fShader);
@@ -219,7 +204,7 @@ public:
 					ScreenType = ScreenType::LookingGlass;
 					swapShaders(fFlatShader, fShader);
 				}
-				else 
+				else
 				{
 					ScreenType = ScreenType::Flat;
 					swapShaders(fShader, fFlatShader);
@@ -256,6 +241,7 @@ public:
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::End();
 
+		// Draw full screen quad with the path tracer shader
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		frame++;
 	}

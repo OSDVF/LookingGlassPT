@@ -119,11 +119,11 @@ float Camera_fovY = tan(radians(60));
 
 void getFlatScreenRay(vec2 pix, out Ray ray){
   vec4 dir = inverse(uProj * uView)*vec4(pix,1,1);
-  //dir.xyz/=dir.w;
-  vec3 pos = vec3(inverse(uProj * uView)*vec4(0,0,0,1));
+  dir.xyz/=dir.w;
+  vec3 pos = vec3(inverse(uView)*vec4(0,0,0,1));
 
   ray = Ray(pos, normalize(dir.xyz));
-  ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x) + vec3(5.2,0.0,-1.9);
+  ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x) + vec3(4.2,1,-0.4);
 }
 
 //https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection

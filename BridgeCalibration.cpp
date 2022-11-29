@@ -10,6 +10,7 @@
 #include <process.hpp>
 #include <nlohmann/json.hpp>
 #include "alert_exception.h"
+#include "Helpers.h"
 #ifdef _WIN32
 #include <io.h>
 #else
@@ -60,11 +61,14 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	}
 
 	Process process(
-		"node "
+		std::format(
+			"node "
 #ifdef _DEBUG
-		"--unhandled-rejections=strict "
+			"--unhandled-rejections=strict "
 #endif
-		"--harmony-top-level-await index.js", "",
+			"--harmony-top-level-await {}",
+			Helpers::relativeToExecutable("index.js").string()
+		), "",
 		[&](const char* bytes, size_t n)
 		{
 			auto stringVersion = std::string(bytes, n);

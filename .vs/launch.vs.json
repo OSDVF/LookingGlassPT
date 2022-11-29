@@ -1,0 +1,38 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "",
+      "name": "Launch",
+      "currentDir": "${workspaceRoot}"
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "buildConfigurations": [
+        {
+          "name": "x64 Memory",
+          "project": "CMakeLists.txt"
+        }
+      ],
+      "name": "Memory",
+      "program": "C:\\Windows\\System32\\cmd.exe",
+      "args": [
+        "",
+        "/k",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
+      ],
+      "currentDir": "${workspaceRoot}"
+    },
+    {
+      "name": "Flat Screen",
+      "project": "CMakeLists.txt",
+      "projectTarget": "LookingGlassPT.exe",
+      "args": [ "flat", "flat" ],
+      "currentDir": "${workspaceRoot}"
+    }
+  ]
+}

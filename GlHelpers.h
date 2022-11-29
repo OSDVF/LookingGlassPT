@@ -1,9 +1,9 @@
+#pragma once
 #include <gl/glew.h>
 #define GLSL_VERSION 420
 
-class GlHelpers {
-public:
-	static void GLAPIENTRY
+namespace GlHelpers {
+	void GLAPIENTRY
 		MessageCallback(GLenum source,
 			GLenum type,
 			GLuint id,
@@ -20,13 +20,13 @@ public:
 		);
 	}
 
-	static void initCallback()
+	void initCallback()
 	{
 		glEnable(GL_DEBUG_OUTPUT);
 		glDebugMessageCallback(MessageCallback, 0);
 	}
 
-	static void setVertexAttrib(
+	void setVertexAttrib(
 		GLuint   vao,
 		GLuint   attrib,
 		GLint    size,
@@ -60,7 +60,7 @@ public:
 	}
 
 	template<GLenum SHADER_TYPE>
-	static bool compileShader(std::string filename, GLuint& shader, std::initializer_list<std::string> defines)
+	bool compileShader(std::string filename, GLuint& shader, std::initializer_list<std::string> defines)
 	{
 		shader = glCreateShader(SHADER_TYPE);
 		std::ifstream t;
@@ -111,7 +111,7 @@ public:
 		return true;
 	}
 
-	static void linkProgram(GLuint program)
+	void linkProgram(GLuint program)
 	{
 		glLinkProgram(program);
 		int success;
