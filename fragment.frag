@@ -5,6 +5,7 @@
 #define getRay getLookingGlassRay
 #endif
 out vec4 OutColor;
+in vec2 vNDCpos;
 
 // Based on https://www.shadertoy.com/view/ttXSDN
 layout(shared)
@@ -28,6 +29,31 @@ struct Ray {
     vec3 direction;
 };
 
+struct AnalyticalObject
+{
+    vec3 position;
+    uint type; //0 = sphere, 1 = cube
+    vec3 size;
+    uint materialIndex;
+};
+
+struct Light {
+    vec3 direction;
+};
+
+AnalyticalObject[1] objects = {
+    AnalyticalObject(
+        vec3(0,0,-5),
+        0,
+        vec3(1),
+        0
+    )
+};
+
+Light[1] lights = {
+    Light(vec3(0, 1, 0))
+};
+
 
 float screenSize = 2.0; // Just do everything in screenSizes
 
@@ -43,7 +69,7 @@ void getLookingGlassRay(vec2 pix, out Ray ray) {
     float focalDist   = -1.0-(uMouse.y/uWindowSize.y) * 5.0; // -2.0 is a good default
     
     // Normalized pixel coordinates (from 0 to 1)
-    vec2 screenCoord = pix/uWindowSize.xy;
+    vec2 screenCoord = pix*0.5+0.5;
     
     // Get the current view for this subpixel
     float view = screenCoord.x;
@@ -62,22 +88,206 @@ void getLookingGlassRay(vec2 pix, out Ray ray) {
     vec3 pxOri = pxPos + (1.0 * pxDir); // <- Increase for protruding objects
     vec3 rayOrigin  = pxOri; 
     vec3 rayDir = -pxDir;
-    
-    // Offset and Swizzle for IQ's Coordinate System
-    rayOrigin = vec3(-rayOrigin.z, rayOrigin.y, rayOrigin.x) + vec3(3.2,0.0,-0.9);
-    rayDir = vec3(-rayDir.z, rayDir.y, rayDir.x);
-
     ray = Ray(rayOrigin, rayDir);
+    ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x) + vec3(3.2,0.0,-0.9);
 }
 
-void getFlatScreenRay(vec2 pix, out Ray ray) {
+
+float Camera_fovY = tan(radians(60));
+
+/*void getFlatScreenRay(vec2 pix, out Ray ray)
+{
+    float Camera_fovX = (uWindowSize.x * Camera_fovY) / uWindowSize.y;
+    // Apply FOV = create perspective projection
+    float a = Camera_fovX * pix.x;
+    float b = Camera_fovY * pix.y;
+
+    vec3 dir = normalize(a * vec3(1,0,0) + b * vec3(0,1,0) + vec3(0,0,1));
+
+    ray= Ray(vec3(0,0,0), dir);
+}*/
+
+/*void getFlatScreenRay(vec2 pix, out Ray ray) {
+    vec4 screenSpaceFar = vec4(vNDCpos, 1.0, 0.0);
+    vec4 screenSpaceNear = vec4(vNDCpos, 0.0, 0.0);
+    vec4 far = inverse(uProj * uView) * screenSpaceFar;
+    far /= far.w;
+    vec4 near = inverse(uProj * uView) * screenSpaceNear;
+    near /= near.w;
+    ray = Ray(vec3(0), normalize(far.xyz - near.xyz));
+}*/
+
+void getFlatScreenRay(vec2 pix, out Ray ray){
   vec4 dir = inverse(uProj * uView)*vec4(pix,1,1);
-  dir.xyz/=dir.w;
-  vec3 pos = vec3(inverse(uProj*uView)*vec4(0,0,0,1));
+  //dir.xyz/=dir.w;
+  vec3 pos = vec3(inverse(uProj * uView)*vec4(0,0,0,1));
 
   ray = Ray(pos, normalize(dir.xyz));
+  ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x) + vec3(5.2,0.0,-1.9);
 }
 
+//https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
+bool solveQuadratic(float a, float b, float c, out float x1, out float x2) 
+{ 
+    if (b == 0) { 
+        // Handle special case where the the two vector ray.dir and V are perpendicular
+        // with V = ray.orig - sphere.centre
+        if (a == 0) return false; 
+
+        x1 = 0;
+        x2 = sqrt(-c / a); 
+        return true; 
+    } 
+    float discr = b * b - 4 * a * c; 
+ 
+    if (discr < 0) return false; 
+ 
+    float q = (b < 0.f) ? -0.5f * (b - sqrt(discr)) : -0.5f * (b + sqrt(discr)); 
+    x1 = q / a; 
+    x2 = c / q; 
+ 
+    return true; 
+} 
+//Analytic solution
+bool raySphereIntersection(vec3 position, float radius, Ray ray, out float t0, out float t1)
+{
+    // They ray dir is normalized so A = 1 
+    vec3 L = ray.origin - position;
+    float A = dot(ray.direction, ray.direction); 
+    float B = 2 * dot(ray.direction, L); 
+    float C = dot(L, L) - radius * radius; 
+ 
+    if (!solveQuadratic(A, B, C, t0, t1)) return false;  
+    if (t0 > t1)
+    {
+        float swap = t0;
+        t0 = t1;
+        t1 = swap;
+    }
+    return true; 
+}
+
+bool rayBoxIntersection(vec3 position, vec3 size, Ray ray, out float tmin, out float tmax)
+{
+    // https://tavianator.com/2011/ray_box.html
+    vec3 minPos = position;
+    vec3 maxPos = position + size;
+
+    vec3 t1 = (minPos - ray.origin)/ray.direction;
+    vec3 t2 = (maxPos - ray.origin)/ray.direction;
+
+    tmin = max(
+            min(t1.x, t2.x), 
+            max(
+                min(t1.y, t2.y), min(t1.z, t2.z)
+            )
+        );
+    tmax = min(
+            max(t1.x, t2.x),
+            min(
+                max(t1.y, t2.y), max(t1.z, t2.z)
+            )
+        );
+
+    if(tmax < 0 || tmin > tmax)
+        return false;
+
+    return true;
+}
+
+// With normal
+bool getRayBoxIntersection(AnalyticalObject box, Ray ray, out vec3 hitPosition, out vec3 normalAtHit, out float t0)
+{
+    vec3 minPos = box.position;//Lower left edge
+    vec3 maxPos = box.position + box.size;//Upper right edge
+
+    vec3 t1 = (minPos - ray.origin)/ray.direction;
+    vec3 t2 = (maxPos - ray.origin)/ray.direction;
+
+    vec3 tmin = 
+        vec3(
+            min(t1.x, t2.x),
+            min(t1.y, t2.y),
+            min(t1.z, t2.z)
+        );
+    vec3 tmax =
+        vec3(
+            max(t1.x, t2.x),
+            max(t1.y, t2.y),
+            max(t1.z, t2.z)
+        );
+
+    float allMax = min(min(tmax.x,tmax.y),tmax.z);
+    float allMin = max(max(tmin.x,tmin.y),tmin.z);
+
+    if(allMax > 0.0 && allMax > allMin)
+    {
+        hitPosition = ray.origin + ray.direction * allMin;
+        vec3 center = box.position + box.size*0.5;
+        vec3 difference = center - hitPosition;
+        if (allMin == tmin.x) {// Ray hit the X plane
+            normalAtHit = vec3(-1, 0, 0) * sign(difference.x);
+        }
+        else if (allMin == tmin.y) {// Ray hit the Y plane
+            normalAtHit = vec3(0, -1, 0) * sign(difference.y);
+        }
+        else if (allMin == tmin.z) {// Ray hit the Z plane
+            normalAtHit = vec3(0, 0, -1) * sign(difference.z);
+        } 
+        t0 = allMin;
+        return true;
+    }
+    return false;
+}
+
+
+//Geometric solution, with normal
+bool getRaySphereIntersection(AnalyticalObject sphere, Ray ray, out vec3 hitPosition, out vec3 normalAtHit, out float t0)
+{
+    hitPosition = vec3(0,0,0);
+    normalAtHit = vec3(0,0,0);
+    vec3 L = sphere.position - ray.origin;
+    float tca = dot(ray.direction, L);
+    if(tca < 0)
+        return false;
+    float radius2 = sphere.size.x * sphere.size.x;
+    float d2 = dot(L,L) - tca * tca; 
+    if (d2 > radius2) return false; 
+
+    float thc = sqrt(radius2 - d2); 
+    t0 = tca - thc; 
+    float t1 = tca + thc; 
+
+    vec3 hp = ray.origin + ray.direction * t0; // point of intersection 
+    hitPosition = hp;
+    normalAtHit = normalize(hp - sphere.position);
+    return true; 
+}
+
+
+bool rayObjectIntersection(AnalyticalObject object, Ray ray, out float t0, out float t1)
+{
+    switch(object.type)
+    {
+    case 0:
+        //Sphere
+        return raySphereIntersection(object.position, object.size.x, ray, t0, t1);
+    case 1:
+        return rayBoxIntersection(object.position, object.size, ray, t0, t1);
+    }
+}
+
+bool getRayObjectIntersection(AnalyticalObject object, Ray ray, out vec3 hitPosition, out vec3 normalAtHit, out float t0)
+{
+    switch(object.type)
+    {
+    case 0:
+        //Sphere
+        return getRaySphereIntersection(object, ray, hitPosition, normalAtHit, t0);
+    case 1:
+        return getRayBoxIntersection(object, ray, hitPosition, normalAtHit, t0);
+    }
+}
 
 // The MIT License
 // Copyright © 2019 Inigo Quilez
@@ -325,7 +535,23 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
     getRay(fragCoord, ray);
 	//getLookignGlassRay( fragCoord + vec2(1.0/3.0,0.0), ddx_ro, ddx_rd );
 	//getLookignGlassRay( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
-		
+    #if 0
+    for(uint i = 0; i < objects.length(); i++)
+    {
+        vec3 outHit, outNorm;
+        float outT;
+        bool hit = getRayObjectIntersection(objects[i], ray, outHit, outNorm, outT);
+        if(hit)
+        {
+            return vec3(1)*max(dot(outNorm, lights[0].direction), 0.0);
+        }
+        else
+        {
+            return vec3(0);
+        }
+    }
+		#endif
+    ray.direction = vec3(-ray.direction.z, ray.direction.y, ray.direction.x);
     // trace
 	vec3 pos, nor;
 	float occ;
@@ -380,11 +606,10 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 // TODO: subroutine selection
 
 void main() {
-    vec2 pixelCoord = gl_FragCoord.xy;
     vec3 col = vec3(0);
     for(int subpI = 0; subpI < 3; subpI++)
     {
-        col[subpI] = rayTraceSubPixel(pixelCoord + vec2(subpI/3.0, 0.0))[subpI];
+        col[subpI] = rayTraceSubPixel(vNDCpos + vec2(subpI*uCalibration.subp, 0.0))[subpI];
     }
 	
     // output

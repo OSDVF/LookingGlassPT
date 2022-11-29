@@ -7,14 +7,24 @@
 #include <string>
 #include <filesystem>
 #include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include "GlHelpers.h"
+#include "FirstPersonController.h"
 #ifdef WIN32
 #include <Windows.h>
 #endif
 
-
+/**
+* Resolves to a file in current working directory. But if it does not exists, resolves to file next to the executable
+*/
 std::filesystem::path relativeToExecutable(std::string filename)
 {
+	if (std::filesystem::exists(filename))
+	{
+		return filename;
+	}
+
 	std::filesystem::path executablePath;
 #ifdef WIN32
 	LPSTR exePath = new CHAR[MAX_PATH];
@@ -33,6 +43,8 @@ struct {
 	GLint uWindowSize;
 	GLint uWindowPos;
 	GLint uMouse;
+	GLint uView;
+	GLint uProj;
 } uniforms;
 
 class App {
@@ -46,40 +58,51 @@ public:
 	static inline GLuint fullScreenVertexBuffer;
 	static inline float windowWidth;
 	static inline float windowHeight;
+	static inline float fov = 60;
+	static inline float farPlane = 1000;
+	static inline float nearPlane = 0.1;
+	static inline FirstPersonController person;
+	static inline long lastTime;
 	static inline enum class ScreenType {
 		Flat = 0, LookingGlass = 1
 	} ScreenType;
-	static void setup(ImGuiIO& io, int x, int y, int w, int h)
+	static void setup(ImGuiIO& io, int x, int y, int w, int h, bool forceFlat = false)
 	{
-		ScreenType = ScreenType::LookingGlass;
+		GlHelpers::initCallback();
+		ScreenType = ScreenType::Flat;
+		person.Camera.Sensitivity = 0.000001f;
 		windowWidth = w;
-		windowWidth = h;
-		try {
+		windowHeight = h;
+		if (forceFlat)
+		{
+			std::cout << "Forced flat screen." << std::endl;
+		}
+		else
+		{
 			try {
-				std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
-				calibration = BridgeCalibration().getCalibration();
+				try {
+					std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
+					calibration = BridgeCalibration().getCalibration();
+				}
+				catch (const std::runtime_error& e)
+				{
+					std::cerr << e.what() << std::endl;
+					std::cout << "Trying USB calibration..." << std::endl;
+					calibration = UsbCalibration().getCalibration();
+				}
+				std::cout << "Calibration success: " << std::endl << calibration;
+				ScreenType = ScreenType::LookingGlass;
 			}
-			catch (const std::runtime_error& e)
+			catch (const std::exception& e)
 			{
 				std::cerr << e.what() << std::endl;
-				std::cout << "Trying USB calibration..." << std::endl;
-				calibration = UsbCalibration().getCalibration();
+				std::cerr << "Calibration failed. Using default values." << std::endl;
 			}
-			std::cout << "Calibration success: " << std::endl << calibration;
 		}
-		catch (const std::exception& e)
-		{
-			std::cerr << e.what() << std::endl;
-			std::cerr << "Calibration failed. Using default values." << std::endl;
-			ScreenType = ScreenType::Flat;
-		}
-		std::string fragSource = relativeToExecutable("fragment.frag").string();
-		GlHelpers::compileShader<GL_VERTEX_SHADER>(relativeToExecutable("vertex.vert").string(), vShader, {});
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, {});
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN" });
 		program = glCreateProgram();
+		GlHelpers::compileShader<GL_VERTEX_SHADER>(relativeToExecutable("vertex.vert").string(), vShader, {});
 		glAttachShader(program, vShader);
-		glAttachShader(program, ScreenType == ScreenType::Flat ? fFlatShader : fShader);
+		recompileFragmentSh();
 		GlHelpers::linkProgram(program);
 		glCreateVertexArrays(1, &fullScreenVAO);
 		// Assign to fullScreenVertexBuffer
@@ -117,25 +140,51 @@ public:
 		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_DRAW);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboHandle);
 
-		uniforms = {
-			glGetUniformLocation(program, "uTime"),
-			glGetUniformLocation(program, "uWindowSize"),
-			glGetUniformLocation(program, "uWindowPos"),
-			glGetUniformLocation(program, "uMouse"),
-		};
+		bindUniforms();
 		glBindVertexArray(fullScreenVAO);
 		glUseProgram(program);
 		glUniform1f(uniforms.uTime, 0);
 		glUniform2f(uniforms.uWindowSize, w, h);
 		glUniform2f(uniforms.uWindowPos, x, y);
 		glUniform2f(uniforms.uMouse, 0.5f, 0.5f);
+
+		person.Camera.SetProjectionMatrixPerspective(fov, (float)w / h, nearPlane, farPlane);
+		person.Camera.SetCenter(glm::vec2(w / 2, h / 2));
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		lastTime = SDL_GetPerformanceCounter();
 	}
+	static void bindUniforms()
+	{
+		uniforms = {
+			glGetUniformLocation(program, "uTime"),
+			glGetUniformLocation(program, "uWindowSize"),
+			glGetUniformLocation(program, "uWindowPos"),
+			glGetUniformLocation(program, "uMouse"),
+			glGetUniformLocation(program, "uView"),
+			glGetUniformLocation(program, "uProj"),
+		};
+	}
+
+	static void recompileFragmentSh()
+	{
+		// Will produce errors if the shader is not compiled yet but c'est la vie
+		glDetachShader(program, fFlatShader);
+		glDetachShader(program, fShader);
+
+		std::string fragSource = relativeToExecutable("fragment.frag").string();
+		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, {});
+		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN" });
+		glAttachShader(program, ScreenType == ScreenType::Flat ? fFlatShader : fShader);
+	}
+
 	static inline float f;
 	static inline int counter = 0;
 	static inline float frame = 1;
 	static void draw(ImGuiIO& io, SDL_Event event)
 	{
+		auto now = SDL_GetPerformanceCounter();
+		float deltaTime = (now - lastTime) / (float)SDL_GetPerformanceFrequency();
+		person.Update(deltaTime, false, event);
 		switch (event.type)
 		{
 		case SDL_WINDOWEVENT:
@@ -143,6 +192,9 @@ public:
 			{
 			case SDL_WINDOWEVENT_RESIZED:
 				glUniform2f(uniforms.uWindowSize, event.window.data1, event.window.data2);
+				windowWidth = event.window.data1;
+				windowHeight = event.window.data2;
+				person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
 				//std::cout << "W:" << event.window.data1 << "H:" << event.window.data2 << std::endl;
 				break;
 			case SDL_WINDOWEVENT_MOVED:
@@ -154,24 +206,42 @@ public:
 		case SDL_MOUSEMOTION:
 			glUniform2f(uniforms.uMouse, event.motion.x, event.motion.y);
 			break;
+		case SDL_KEYUP:
+			switch (event.key.keysym.sym)
+			{
+			case SDL_KeyCode::SDLK_r:
+				recompileFragmentSh();
+				GlHelpers::linkProgram(program);
+				break;
+			case SDL_KeyCode::SDLK_s:
+				if (ScreenType == ScreenType::Flat)
+				{
+					ScreenType = ScreenType::LookingGlass;
+					swapShaders(fFlatShader, fShader);
+				}
+				else 
+				{
+					ScreenType = ScreenType::Flat;
+					swapShaders(fShader, fFlatShader);
+				}
+				break;
+			}
+			break;
 		}
 		glBindVertexArray(fullScreenVAO);
 		glUseProgram(program);
 		glUniform1f(uniforms.uTime, frame);
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		glUniformMatrix4fv(uniforms.uView, 1, false, glm::value_ptr(person.Camera.GetViewMatrix()));
+		glUniformMatrix4fv(uniforms.uProj, 1, false, glm::value_ptr(person.Camera.GetProjectionMatrix()));
 
 		ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
 		if (ImGui::RadioButton("Looking Glass", (int*)&ScreenType, (int)ScreenType::LookingGlass))
 		{
-			glDetachShader(program, fFlatShader);
-			glAttachShader(program, fShader);
-			GlHelpers::linkProgram(program);
+			swapShaders(fFlatShader, fShader);
 		}
 		if (ImGui::RadioButton("Flat", (int*)&ScreenType, (int)ScreenType::Flat))
 		{
-			glDetachShader(program, fShader);
-			glAttachShader(program, fFlatShader);
-			GlHelpers::linkProgram(program);
+			swapShaders(fShader, fFlatShader);
 		}
 
 		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
@@ -185,6 +255,16 @@ public:
 
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::End();
+
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		frame++;
+	}
+	static void swapShaders(GLuint before, GLuint after)
+	{
+		glDetachShader(program, before);
+		glAttachShader(program, after);
+		GlHelpers::linkProgram(program);
+		bindUniforms();
+		glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
 	}
 };

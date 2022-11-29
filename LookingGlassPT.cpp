@@ -16,7 +16,7 @@
 #define WINDOW_W 640
 #define WINDOW_H 480
 ImGuiIO io;
-int main()
+int main(int argc, const char ** argv)
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
 	{
@@ -24,7 +24,7 @@ int main()
 		return 1;
 	}
 
-	/* Request opengl 3.2 context.
+	/* Request opengl 4.2 context.
 	 * SDL doesn't have the ability to choose which profile at this time of writing,
 	 * but it should default to the core profile */
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -60,76 +60,75 @@ int main()
 
 	bool playing = true;
 	bool fullscreen = false;
+	bool forceFlat = false;
+	if (argc > 1)
+	{
+		if (std::string("flat") == argv[2])
+		{
+			forceFlat = true;
+		}
+	}
 
-	App::setup(io, WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H);
+	App::setup(io, WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H, forceFlat);
 	while (playing)
 	{
 		SDL_Event event;
-		if (SDL_WaitEvent(&event))
+		SDL_PollEvent(&event);
+
+		switch (event.type)
 		{
-			switch (event.type)
+		case SDL_QUIT:
+			playing = false;
+			break;
+		case SDL_MOUSEMOTION:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_MOUSEBUTTONDOWN:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_MOUSEBUTTONUP:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_MOUSEWHEEL:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_KEYUP:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			switch (event.key.keysym.sym)
 			{
-			case SDL_QUIT:
-				playing = false;
+			case SDLK_ESCAPE:
+				playing = 0;
 				break;
-			case SDL_MOUSEMOTION:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				draw(window, event);
-				break;
-			case SDL_MOUSEBUTTONDOWN:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				draw(window, event);
-				break;
-			case SDL_MOUSEBUTTONUP:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				draw(window, event);
-				break;
-			case SDL_MOUSEWHEEL:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				draw(window, event);
-				break;
-			case SDL_KEYUP:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				switch (event.key.keysym.sym)
+			case 'f':
+				fullscreen = !fullscreen;
+				if (fullscreen)
 				{
-				case SDLK_ESCAPE:
-					playing = 0;
-					break;
-				case 'f':
-					fullscreen = !fullscreen;
-					if (fullscreen)
-					{
-						SDL_SetWindowFullscreen(window, windowFlags | SDL_WINDOW_FULLSCREEN_DESKTOP);
-					}
-					else
-					{
-						SDL_SetWindowFullscreen(window, windowFlags);
-					}
-					break;
-				default:
-					break;
+					SDL_SetWindowFullscreen(window, windowFlags | SDL_WINDOW_FULLSCREEN_DESKTOP);
+				}
+				else
+				{
+					SDL_SetWindowFullscreen(window, windowFlags);
 				}
 				break;
-			case SDL_KEYDOWN:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				draw(window, event);
-				break;
-			case SDL_WINDOWEVENT:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				if (event.window.event == SDL_WINDOWEVENT_RESIZED)
-				{
-					float w = event.window.data1;
-					float h = event.window.data2;
-					glViewport(0, 0, w, h);
-				}
-				draw(window, event);
+			default:
 				break;
 			}
+			break;
+		case SDL_KEYDOWN:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_WINDOWEVENT:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			if (event.window.event == SDL_WINDOWEVENT_RESIZED)
+			{
+				float w = event.window.data1;
+				float h = event.window.data2;
+				glViewport(0, 0, w, h);
+			}
+			break;
 		}
-		else
-		{
-			std::cerr << SDL_GetError() << std::endl;
-		}
+		draw(window, event);
+
 	}
 
 	// Cleanup

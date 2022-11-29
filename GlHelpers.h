@@ -3,6 +3,29 @@
 
 class GlHelpers {
 public:
+	static void GLAPIENTRY
+		MessageCallback(GLenum source,
+			GLenum type,
+			GLuint id,
+			GLenum severity,
+			GLsizei length,
+			const GLchar* message,
+			const void* userParam)
+	{
+		fprintf(stderr, 
+			"%s %x (severity 0x%x): %s\n",
+			(type == GL_DEBUG_TYPE_ERROR ? "Error" : "Message"),
+			type,
+			severity, message
+		);
+	}
+
+	static void initCallback()
+	{
+		glEnable(GL_DEBUG_OUTPUT);
+		glDebugMessageCallback(MessageCallback, 0);
+	}
+
 	static void setVertexAttrib(
 		GLuint   vao,
 		GLuint   attrib,
@@ -63,11 +86,6 @@ public:
 		}
 		shaderParts.push_back(buffer.c_str());
 		glShaderSource(shader, shaderParts.size(), shaderParts.data(), nullptr); // Let OpenGL read until null terminator
-		GLenum error = glGetError();
-		if (error != GL_NO_ERROR)
-		{
-			std::cerr << "GL Error: " << error << std::endl;
-		}
 		glCompileShader(shader);
 		GLint isCompiled = 0;
 		glGetShaderiv(shader, GL_COMPILE_STATUS, &isCompiled);
