@@ -20,8 +20,9 @@ uniform float uTime = 0;
 uniform vec2 uWindowSize = vec2(500,500);
 uniform vec2 uWindowPos;
 uniform vec2 uMouse = vec2(0.5,0.5);
+uniform float uViewCone = 0.698131701; // 40 deg in rad
 
-uniform mat4 uView; //
+uniform mat4 uView;
 uniform mat4 uProj;
 
 struct Ray {
@@ -54,78 +55,37 @@ Light[1] lights = {
     Light(vec3(0, 1, 0))
 };
 
+int subpI;
 
-float screenSize = 2.0; // Just do everything in screenSizes
-
-// A single view will _converge_ on a point about two screen-heights 
-// from the device. Assume focalDist is ~2 screenSizehs backwards, 
-// and from ~-0.22222 to 2 screenSizes on the x axis (use mouse.xy 
-// to control these)
-void getLookingGlassRay(vec2 pix, out Ray ray) {
-    vec2 uMouse = vec2(0.5,0.5);
-    // Mouse controlled focal distance and viewpoint spread
-    float screenWidth = (uWindowSize.x/uWindowSize.y) * screenSize;
-    float focalLeft   = -((uMouse.x/uWindowSize.x)-0.45)*2.0;  
-    float focalRight  = screenWidth - focalLeft;
-    float focalDist   = -1.0-(uMouse.y/uWindowSize.y) * 5.0; // -2.0 is a good default
-    
-    // Normalized pixel coordinates (from 0 to 1)
-    vec2 screenCoord = pix*0.5+0.5;
-    
-    // Get the current view for this subpixel
-    float view = screenCoord.x;
-	view += screenCoord.y * uCalibration.tilt;
-	view *= uCalibration.pitch;
-	view -= uCalibration.center;
-	view = 1.0 - mod(view + ceil(abs(view)), 1.0);
-    
-    // Calculate the ray dir assuming pixels of a given view converge
-    // at points along a line segment floating "focalDist" above the display.
-    // TODO: Take into account the refraction of the acrylic, which changes
-    // the rays' angle of attack as they converge on pxFoc
-    mat4x3 InvView = mat4x3(inverse(uView));
-    vec3 pxPos = InvView[0] * screenCoord.x * screenWidth + InvView[1] * screenCoord.y * screenSize + InvView[3];
-    vec3 pxFoc = InvView[0] * mix(focalLeft, focalRight, view) + InvView[1] * 0.5 + InvView[2] * focalDist + InvView[3];
-    vec3 pxDir = pxFoc - pxPos; pxDir /= length(pxDir);
-    vec3 pxOri = pxPos + (1.0 * pxDir); // <- Increase for protruding objects
-    vec3 rayOrigin  = pxOri; 
-    vec3 rayDir = -pxDir;
-    ray = Ray(rayOrigin, rayDir);
-    ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x) + vec3(3.2,0.0,-0.9);
-}
-
-
-const float viewCone = 0.698131701; // 40 deg in rad
-
-uniform vec4 tile = vec4(5,9,45,45);
+const int tile = 45;
 Ray generateChaRay(){
     vec2 texCoords = vNDCpos*.5f+.5f;
 	vec3 nuv = vec3(texCoords, 0.0f);
 
-	nuv.z = (texCoords.x + texCoords.y * uCalibration.tilt) * uCalibration.pitch - uCalibration.center;
+	nuv.z = (texCoords.x + uCalibration.subp * subpI + texCoords.y * uCalibration.tilt) * uCalibration.pitch - uCalibration.center;
 	nuv.z = fract(nuv.z);
 	nuv.z = (1.0 - nuv.z);
 	vec2 vvPos = texCoords*2.f-1.f;//texArr(nuv);
 
-    int viewId = int(nuv.z*tile.z);
+    int viewId = int(nuv.z*tile);
 
     mat4 newView = uView;
     mat4 newProj = uProj;
 
   
-    float aspect = 512.f/512.f;
+    float aspect = uWindowSize.x/uWindowSize.y;
     float fovy   = 3.1415/2.f;
     float ttt = float(viewId) / float(45.f - 1);
-    float d = 0.7f;
-    float S = 0.5f*d*tan(viewCone);
+    float d = 2.f;
+    float S = 0.5f*d*tan(uViewCone);
     float s = S-2*ttt*S;
 
     newView[3][0] += s;
     newProj[2][0] += s/(d*aspect*tan(fovy/2));
 
-    vec4 dir = inverse(newProj*newView)*vec4(vvPos,1,1);
+    vec4 dir = inverse(newProj * newView)*vec4(vvPos,1,1);
     dir.xyz/=dir.w;
-    vec3 pos = vec3(inverse(newProj*newView)*vec4(0,0,0,1));
+    vec3 pos = vec3(inverse(newView)*vec4(0,0,0,1));
 
     Ray ray;
     ray.origin=pos;
@@ -133,8 +93,9 @@ Ray generateChaRay(){
     return ray;
 }
 
-void cgetLookingGlassRay(vec2 pix, out Ray ray) {
+void getLookingGlassRay(vec2 pix, out Ray ray) {
     ray = generateChaRay();
+    ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x);
 }
 
 void getFlatScreenRay(vec2 pix, out Ray ray){
@@ -143,7 +104,7 @@ void getFlatScreenRay(vec2 pix, out Ray ray){
   vec3 pos = vec3(inverse(uView)*vec4(0,0,0,1));
 
   ray = Ray(pos, normalize(dir.xyz));
-  ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x) + vec3(5.2,0.5,-0.4);
+  ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x);
 }
 
 //https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
@@ -628,9 +589,9 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 
 void main() {
     vec3 col = vec3(0);
-    for(int subpI = 0; subpI < 3; subpI++)
+    for(subpI = 0; subpI < 3; subpI++)
     {
-        col[subpI] = rayTraceSubPixel(vNDCpos + vec2(subpI*uCalibration.subp, 0.0))[subpI];
+        col[subpI] = rayTraceSubPixel(vNDCpos)[subpI];
     }
 	
     // output

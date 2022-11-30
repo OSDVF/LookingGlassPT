@@ -16,7 +16,7 @@
 #define WINDOW_W 640
 #define WINDOW_H 480
 ImGuiIO io;
-int main(int argc, const char ** argv)
+int main(int argc, const char** argv)
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
 	{
@@ -33,7 +33,7 @@ int main(int argc, const char ** argv)
 
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-	auto windowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
+	auto windowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
 	SDL_Window* window = SDL_CreateWindow("Looking Glass Path Tracer Demo", WINDOW_X, WINDOW_Y,
 		WINDOW_W, WINDOW_H, windowFlags);
 
@@ -64,13 +64,21 @@ int main(int argc, const char ** argv)
 	bool powerSave = false;
 	if (argc > 1)
 	{
-		if (std::string("flat") == argv[2])
+		if (std::string("flat") == argv[1])
 		{
 			forceFlat = true;
 		}
 	}
-
-	App::setup(io, WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H, forceFlat);
+	float pixelSize = Helpers::GetVirtualPixelScale(window);
+	App::setup(io,
+		window,
+		WINDOW_X,
+		WINDOW_Y,
+		WINDOW_W,
+		WINDOW_H,
+		pixelSize,
+		forceFlat
+	);
 	while (playing)
 	{
 		SDL_Event event;

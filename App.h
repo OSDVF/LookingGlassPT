@@ -38,41 +38,30 @@ public:
 	static inline float nearPlane = 0.1;
 	static inline FirstPersonController person;
 	static inline long lastTime;
+	static inline SDL_Window* window;
 	static inline enum class ScreenType {
 		Flat = 0, LookingGlass = 1
 	} ScreenType;
-	static void setup(ImGuiIO& io, int x, int y, int w, int h, bool forceFlat = false)
+	static inline int intWidth, intHeight;
+	static inline float pixelScale = 0;
+	static void setup(ImGuiIO& io, SDL_Window* wnd, float x, float y, float w, float h, float pixelScal, bool forceFlat = false)
 	{
+		window = wnd;
 		GlHelpers::initCallback();
-		ScreenType = ScreenType::Flat;
 		person.Camera.Sensitivity = 0.000001f;
 		windowWidth = w;
 		windowHeight = h;
+		pixelScale = pixelScal;
+		io.DisplayFramebufferScale = ImVec2(pixelScale, pixelScale);
+
+		std::cout << "Pixel scale: " << pixelScale << std::endl;
 		if (forceFlat)
 		{
 			std::cout << "Forced flat screen." << std::endl;
 		}
 		else
 		{
-			try {
-				try {
-					std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
-					calibration = BridgeCalibration().getCalibration();
-				}
-				catch (const std::runtime_error& e)
-				{
-					std::cerr << e.what() << std::endl;
-					std::cout << "Trying USB calibration..." << std::endl;
-					calibration = UsbCalibration().getCalibration();
-				}
-				std::cout << "Calibration success: " << std::endl << calibration;
-				ScreenType = ScreenType::LookingGlass;
-			}
-			catch (const std::exception& e)
-			{
-				std::cerr << e.what() << std::endl;
-				std::cerr << "Calibration failed. Using default values." << std::endl;
-			}
+			extractCalibration();
 		}
 		program = glCreateProgram();
 		GlHelpers::compileShader<GL_VERTEX_SHADER>(Helpers::relativeToExecutable("vertex.vert").string(), vShader, {});
@@ -102,13 +91,6 @@ public:
 			std::cerr << "Bad shader memory layout. Calibration block is " << blockSize << " bytes, but should be " << sizeof(calibrationForShader) << std::endl;
 		}
 
-		/*const GLchar* names[] = {"pitch", "slope","center"};
-		GLuint indices[3];
-		glGetUniformIndices(program, 3, names, indices);
-
-		GLint offset[3];
-		glGetActiveUniformsiv(program, 3, indices, GL_UNIFORM_OFFSET, offset);
-		*/
 		GLuint uboHandle;
 		glGenBuffers(1, &uboHandle);
 		glBindBuffer(GL_UNIFORM_BUFFER, uboHandle);
@@ -119,15 +101,42 @@ public:
 		glBindVertexArray(fullScreenVAO);
 		glUseProgram(program);
 		glUniform1f(uniforms.uTime, 0);
-		glUniform2f(uniforms.uWindowSize, w, h);
+		glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
 		glUniform2f(uniforms.uWindowPos, x, y);
 		glUniform2f(uniforms.uMouse, 0.5f, 0.5f);
 
-		person.Camera.SetProjectionMatrixPerspective(fov, (float)w / h, nearPlane, farPlane);
-		person.Camera.SetCenter(glm::vec2(w / 2, h / 2));
+		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
+		person.Camera.SetCenter(glm::vec2(windowWidth / 2, windowHeight / 2));
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		lastTime = SDL_GetPerformanceCounter();
 	}
+	/**
+	* Sets calibration and ScreenType
+	*/
+	static inline void extractCalibration()
+	{
+		ScreenType = ScreenType::Flat;
+		try {
+			try {
+				std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
+				calibration = BridgeCalibration().getCalibration();
+			}
+			catch (const std::runtime_error& e)
+			{
+				std::cerr << e.what() << std::endl;
+				std::cout << "Trying USB calibration..." << std::endl;
+				calibration = UsbCalibration().getCalibration();
+			}
+			std::cout << "Calibration success: " << std::endl << calibration;
+			ScreenType = ScreenType::LookingGlass;
+		}
+		catch (const std::exception& e)
+		{
+			std::cerr << e.what() << std::endl;
+			std::cerr << "Calibration failed. Using default values." << std::endl;
+		}
+	}
+
 	static void bindUniforms()
 	{
 		uniforms = {
@@ -166,6 +175,7 @@ public:
 	static inline int counter = 0;
 	static inline float frame = 1;
 	static inline bool interactive = false;
+	static inline bool focal = false;
 	static void draw(ImGuiIO& io, SDL_Event event)
 	{
 		auto now = SDL_GetPerformanceCounter();
@@ -180,20 +190,22 @@ public:
 			switch (event.window.event)
 			{
 			case SDL_WINDOWEVENT_RESIZED:
-				glUniform2f(uniforms.uWindowSize, event.window.data1, event.window.data2);
 				windowWidth = event.window.data1;
 				windowHeight = event.window.data2;
+				glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
 				person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
-				//std::cout << "W:" << event.window.data1 << "H:" << event.window.data2 << std::endl;
+				std::cout << "W:" << event.window.data1 << "H:" << event.window.data2 << std::endl;
 				break;
 			case SDL_WINDOWEVENT_MOVED:
 				glUniform2f(uniforms.uWindowPos, event.window.data1, event.window.data2);
+				pixelScale = Helpers::GetVirtualPixelScale(window);
+				io.DisplayFramebufferScale = ImVec2(pixelScale, pixelScale);
 				//std::cout << "X:" << event.window.data1 << "Y:" << event.window.data2 << std::endl;
 				break;
 			}
 			break;
 		case SDL_MOUSEMOTION:
-			if (interactive)
+			if (focal)
 			{
 				glUniform2f(uniforms.uMouse, event.motion.x, event.motion.y);
 			}
@@ -219,6 +231,9 @@ public:
 				break;
 			case SDL_KeyCode::SDLK_i:
 				interactive = !interactive;
+				break;
+			case SDL_KeyCode::SDLK_m:
+				focal = !focal;
 				break;
 			}
 			break;

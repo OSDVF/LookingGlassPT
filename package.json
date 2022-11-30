@@ -5,6 +5,7 @@
   "dependencies": {
     "holoplay": "1.0.3",
     "mock-dom-resources": "^9.0.0",
-    "three": "0.146.0"
+    "three": "0.146.0",
+    "ws": "^8.11.0"
   }
 }

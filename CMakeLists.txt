@@ -76,3 +76,5 @@ if(ASAN_ENABLED)
     target_link_options(LookingGlassPT PUBLIC -fsanitize=address /wholearchive: clang_rt.asan_dbg_dynamic-x86_64.lib clang_rt.asan_dbg_dynamic_runtime_thunk-x86_64.lib)
   endif()
 endif()
+
+target_sources(LookingGlassPT PRIVATE dpiAware.manifest)

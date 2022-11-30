@@ -21,7 +21,6 @@
       "name": "Memory",
       "program": "C:\\Windows\\System32\\cmd.exe",
       "args": [
-        "",
         "/k",
         "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
       ],
@@ -31,7 +30,7 @@
       "name": "Flat Screen",
       "project": "CMakeLists.txt",
       "projectTarget": "LookingGlassPT.exe",
-      "args": [ "flat", "flat" ],
+      "args": [ "flat" ],
       "currentDir": "${workspaceRoot}"
     }
   ]
