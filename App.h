@@ -53,6 +53,7 @@ public:
 		windowWidth = w;
 		windowHeight = h;
 		pixelScale = pixelScal;
+		ImGui::GetStyle().ScaleAllSizes(pixelScale);
 		io.FontGlobalScale = pixelScale;
 
 		std::cout << "Pixel scale: " << pixelScale << std::endl;
@@ -199,6 +200,7 @@ public:
 			case SDL_WINDOWEVENT_MOVED:
 				glUniform2f(uniforms.uWindowPos, event.window.data1, event.window.data2);
 				pixelScale = Helpers::GetVirtualPixelScale(window);
+				ImGui::GetStyle().ScaleAllSizes(pixelScale);
 				io.FontGlobalScale = pixelScale;
 				break;
 			}

@@ -7,7 +7,6 @@
 out vec4 OutColor;
 in vec2 vNDCpos;
 
-// Based on https://www.shadertoy.com/view/ttXSDN
 layout(shared)
 uniform Calibration {
     float pitch;
