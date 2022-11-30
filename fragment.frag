@@ -13,7 +13,7 @@ uniform Calibration {
     float pitch;
     float tilt;
     float center;
-    float subp;//This is not really used
+    float subp;
     vec2 resolution;
 } uCalibration;
 uniform float uTime = 0;
@@ -21,6 +21,7 @@ uniform vec2 uWindowSize = vec2(500,500);
 uniform vec2 uWindowPos;
 uniform vec2 uMouse = vec2(0.5,0.5);
 uniform float uViewCone = 0.698131701; // 40 deg in rad
+uniform float uFocusDistance = 4;
 
 uniform mat4 uView;
 uniform mat4 uProj;
@@ -60,28 +61,25 @@ int subpI;
 const int tile = 45;
 Ray generateChaRay(){
     vec2 texCoords = vNDCpos*.5f+.5f;
-	vec3 nuv = vec3(texCoords, 0.0f);
 
-	nuv.z = (texCoords.x + uCalibration.subp * subpI + texCoords.y * uCalibration.tilt) * uCalibration.pitch - uCalibration.center;
-	nuv.z = fract(nuv.z);
-	nuv.z = (1.0 - nuv.z);
-	vec2 vvPos = texCoords*2.f-1.f;//texArr(nuv);
+	float view = (texCoords.x + uCalibration.subp * subpI + texCoords.y * uCalibration.tilt) * uCalibration.pitch - uCalibration.center;
+	view = fract(view);
+	view = (1.0 - view);
+	vec2 vvPos = texCoords*2.f-1.f;
 
-    int viewId = int(nuv.z*tile);
+    view = floor(view * tile);
 
     mat4 newView = uView;
     mat4 newProj = uProj;
-
   
     float aspect = uWindowSize.x/uWindowSize.y;
-    float fovy   = 3.1415/2.f;
-    float ttt = float(viewId) / float(45.f - 1);
-    float d = 2.f;
-    float S = 0.5f*d*tan(uViewCone);
+    float ttt = view / (45.f - 1);
+    float S = 0.5f*uFocusDistance*tan(uViewCone);
     float s = S-2*ttt*S;
+    float invTanFov = uProj[1][1];
 
     newView[3][0] += s;
-    newProj[2][0] += s/(d*aspect*tan(fovy/2));
+    newProj[2][0] += s/(uFocusDistance*aspect*(1/invTanFov));
 
     vec4 dir = inverse(newProj * newView)*vec4(vvPos,1,1);
     dir.xyz/=dir.w;

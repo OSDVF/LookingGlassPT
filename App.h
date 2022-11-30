@@ -31,6 +31,7 @@ public:
 	static inline Calibration calibration;
 	static inline GLuint fullScreenVAO;
 	static inline GLuint fullScreenVertexBuffer;
+	static inline GLuint uCalibrationHandle;
 	static inline float windowWidth;
 	static inline float windowHeight;
 	static inline float fov = 60;
@@ -52,7 +53,7 @@ public:
 		windowWidth = w;
 		windowHeight = h;
 		pixelScale = pixelScal;
-		io.DisplayFramebufferScale = ImVec2(pixelScale, pixelScale);
+		io.FontGlobalScale = pixelScale;
 
 		std::cout << "Pixel scale: " << pixelScale << std::endl;
 		if (forceFlat)
@@ -91,16 +92,16 @@ public:
 			std::cerr << "Bad shader memory layout. Calibration block is " << blockSize << " bytes, but should be " << sizeof(calibrationForShader) << std::endl;
 		}
 
-		GLuint uboHandle;
-		glGenBuffers(1, &uboHandle);
-		glBindBuffer(GL_UNIFORM_BUFFER, uboHandle);
+		glGenBuffers(1, &uCalibrationHandle);
+		glBindBuffer(GL_UNIFORM_BUFFER, uCalibrationHandle);
 		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_DRAW);
-		glBindBufferBase(GL_UNIFORM_BUFFER, 0, uboHandle);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 0, uCalibrationHandle);//For explanation: https://stackoverflow.com/questions/54955186/difference-between-glbindbuffer-and-glbindbufferbase
 
 		bindUniforms();
 		glBindVertexArray(fullScreenVAO);
 		glUseProgram(program);
 		glUniform1f(uniforms.uTime, 0);
+		// These are one-time set uniforms
 		glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
 		glUniform2f(uniforms.uWindowPos, x, y);
 		glUniform2f(uniforms.uMouse, 0.5f, 0.5f);
@@ -194,13 +195,11 @@ public:
 				windowHeight = event.window.data2;
 				glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
 				person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
-				std::cout << "W:" << event.window.data1 << "H:" << event.window.data2 << std::endl;
 				break;
 			case SDL_WINDOWEVENT_MOVED:
 				glUniform2f(uniforms.uWindowPos, event.window.data1, event.window.data2);
 				pixelScale = Helpers::GetVirtualPixelScale(window);
-				io.DisplayFramebufferScale = ImVec2(pixelScale, pixelScale);
-				//std::cout << "X:" << event.window.data1 << "Y:" << event.window.data2 << std::endl;
+				io.FontGlobalScale = pixelScale;
 				break;
 			}
 			break;
@@ -216,6 +215,8 @@ public:
 			case SDL_KeyCode::SDLK_r:
 				recompileFragmentSh();
 				GlHelpers::linkProgram(program);
+				bindUniforms();
+				glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
 				break;
 			case SDL_KeyCode::SDLK_l:
 				if (ScreenType == ScreenType::Flat)
