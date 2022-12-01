@@ -78,3 +78,13 @@ if(ASAN_ENABLED)
 endif()
 
 target_sources(LookingGlassPT PRIVATE dpiAware.manifest)
+
+
+if (WIN32)
+    # /ENTRY:mainCRTStartup keeps the same "main" function instead of requiring "WinMain"
+    set(SUBSYSTEM_LINKER_OPTIONS "/SUBSYSTEM:CONSOLE")
+else()
+    set(SUBSYSTEM_LINKER_OPTIONS "-mwindows")
+endif()
+
+target_link_options(LookingGlassPT PRIVATE ${SUBSYSTEM_LINKER_OPTIONS})

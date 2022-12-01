@@ -19,8 +19,10 @@ uniform float uTime = 0;
 uniform vec2 uWindowSize = vec2(500,500);
 uniform vec2 uWindowPos;
 uniform vec2 uMouse = vec2(0.5,0.5);
-uniform float uViewCone = 0.698131701; // 40 deg in rad
-uniform float uFocusDistance = 4;
+uniform float uViewCone = radians(20); // 40 deg in rad
+uniform float uFocusDistance = 10;
+
+//TODO vyzkoušet jiné typy projekce, které budou generovat ménì artefaktù
 
 uniform mat4 uView;
 uniform mat4 uProj;

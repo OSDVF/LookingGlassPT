@@ -1,6 +1,8 @@
 ﻿// LookingGlassPT.cpp : Defines the entry point for the application.
 //
-
+#ifdef WIN32
+#include <Windows.h>
+#endif
 #include "LookingGlassPT.h"
 #include <iostream>
 #include <SDL2/SDL.h>
@@ -38,20 +40,34 @@ int main(int argc, const char** argv)
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
 	bool forceFlat = false;
+	bool debug = false;
 	if (argc > 1)
 	{
-		if (std::string("flat") == argv[1])
+		for (int i = 1; i < argc; i++)
 		{
-			forceFlat = true;
+			if (std::string("flat") == argv[i])
+			{
+				forceFlat = true;
+			}
+			else if (std::string("d") == argv[i])
+			{
+				debug = true;
+			}
 		}
+	}
+	if (!debug)
+	{
+#ifdef WIN32
+		FreeConsole();
+#endif
 	}
 	IMGUI_CHECKVERSION();
 
 	std::array<AppWindow*, 2> windows;
-	auto projectWindow = ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 2, forceFlat);
-	auto controlWindow = ControlWindow("Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H);
-	windows[0] = &projectWindow;
-	windows[1] = &controlWindow;
+	auto projectWindow = new ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 2, forceFlat);
+	auto controlWindow = new ControlWindow("Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H);
+	windows[0] = projectWindow;
+	windows[1] = controlWindow;
 
 	std::array<std::deque<SDL_Event>, windows.size()> eventQueues;
 
@@ -80,15 +96,14 @@ int main(int argc, const char** argv)
 				}
 				else
 				{
-					window->setContext();
-					while (events.size() > 0)
+					if (!window->powerSave || events.size() > 0)
 					{
-						auto ev = events.front();
-						window->eventRender(ev);
-						events.pop_front();
+						// Redraw if there was an event or if the window wants to be rendered continuously
+						window->setContext();
+						processEventsOnRender(events, window);
+						window->draw();
+						window->flushRender();
 					}
-					window->draw();
-					window->unsetContext();
 				}
 			}
 		}
@@ -112,11 +127,10 @@ int main(int argc, const char** argv)
 		}
 		bool hasEvent = powerSave ? SDL_WaitEvent(&event) : SDL_PollEvent(&event);
 		auto now = SDL_GetPerformanceCounter();
-		float deltaTime = 1000*((now - lastTime) / (float)SDL_GetPerformanceFrequency());
+		float deltaTime = 1000 * ((now - lastTime) / (float)SDL_GetPerformanceFrequency());
 		lastTime = now;
 		if (hasEvent)
 		{
-			std::cout << event.type << std::endl;
 			switch (event.type)
 			{
 			case SDL_WINDOWEVENT:
@@ -142,7 +156,14 @@ int main(int argc, const char** argv)
 					if (window->windowID == focusedWindow ||
 						(event.type == SDL_WINDOWEVENT && window->windowID == event.window.windowID))
 					{
-						eventQueues[i].push_front(event);
+						try
+						{
+							eventQueues[i].push_front(event);
+						}
+						catch (std::exception)
+						{
+							//Do nothing, probably a race condition occured
+						}
 						exit = window->eventWork(event, deltaTime);
 					}
 				}
@@ -158,7 +179,18 @@ int main(int argc, const char** argv)
 	renderThread.join();
 
 	atexit(SDL_Quit);
+	for (auto window : windows)
+	{
+		delete window;
+	}
 	return 0;
+}
+
+// Read dispatched events on render thread
+void processEventsOnRender(std::deque<SDL_Event>& events, AppWindow*& window)
+{
+	window->eventRender(events);
+	events.clear();
 }
 
 void closeWindow(AppWindow* window)

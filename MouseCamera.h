@@ -33,6 +33,7 @@ public:
 	{
 	}
 	float Sensitivity = 1.0f;
+	float Aspect = 1.0f;
 
 	virtual ~MouseCamera() = default;
 

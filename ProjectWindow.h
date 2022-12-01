@@ -10,8 +10,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "GlHelpers.h"
-#include "FirstPersonController.h"
 #include "Helpers.h"
+#include "Settings.h"
 
 struct {
 	GLint uTime;
@@ -20,8 +20,11 @@ struct {
 	GLint uMouse;
 	GLint uView;
 	GLint uProj;
+	GLint uViewCone;
+	GLint uFocusDistance;
 } uniforms;
 
+using namespace ProjectSettings;
 class ProjectWindow : public AppWindow {
 public:
 	GLuint fShader;
@@ -32,14 +35,7 @@ public:
 	GLuint fullScreenVAO;
 	GLuint fullScreenVertexBuffer;
 	GLuint uCalibrationHandle;
-	float fov = 60;
-	float farPlane = 1000;
-	float nearPlane = 0.1;
-	FirstPersonController person;
-	enum class ScreenType {
-		Flat = 0, LookingGlass = 1
-	} ScreenType;
-
+	
 	ProjectWindow(const char* name, float x, float y, float w, float h, bool forceFlat = false)
 		: AppWindow(name, x, y, w, h)
 	{
@@ -49,7 +45,7 @@ public:
 		if (forceFlat)
 		{
 			std::cout << "Forced flat screen." << std::endl;
-			ScreenType = ScreenType::Flat;
+			GlobalScreenType = ScreenType::Flat;
 		}
 		else
 		{
@@ -114,7 +110,7 @@ public:
 	*/
 	void extractCalibration()
 	{
-		ScreenType = ScreenType::Flat;
+		GlobalScreenType = ScreenType::Flat;
 		try {
 			try {
 				std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
@@ -127,7 +123,7 @@ public:
 				calibration = UsbCalibration().getCalibration();
 			}
 			std::cout << "Calibration success: " << std::endl << calibration;
-			ScreenType = ScreenType::LookingGlass;
+			GlobalScreenType = ScreenType::LookingGlass;
 		}
 		catch (const std::exception& e)
 		{
@@ -145,6 +141,8 @@ public:
 			glGetUniformLocation(program, "uMouse"),
 			glGetUniformLocation(program, "uView"),
 			glGetUniformLocation(program, "uProj"),
+			glGetUniformLocation(program, "uViewCone"),
+			glGetUniformLocation(program, "uFocusDistance"),
 		};
 	}
 
@@ -167,40 +165,21 @@ public:
 		std::string fragSource = Helpers::relativeToExecutable("fragment.frag").string();
 		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, {});
 		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN" });
-		glAttachShader(program, ScreenType == ScreenType::Flat ? fFlatShader : fShader);
+		glAttachShader(program, GlobalScreenType == ScreenType::Flat ? fFlatShader : fShader);
 	}
 
 	void draw() override
 	{
-		AppWindow::draw();
-
-		ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-		if (ImGui::RadioButton("Looking Glass", (int*)&ScreenType, (int)ScreenType::LookingGlass))
-		{
-			swapShaders(fFlatShader, fShader);
-		}
-		if (ImGui::RadioButton("Flat", (int*)&ScreenType, (int)ScreenType::Flat))
-		{
-			swapShaders(fShader, fFlatShader);
-		}
-
-		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-
-		ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-
-		if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-			counter++;
-		ImGui::SameLine();
-		ImGui::Text("counter = %d", counter);
-
+		ImGui::Begin("Info");
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::End();
-
 		glBindVertexArray(fullScreenVAO);
 		glUseProgram(program);
 		glUniform1f(uniforms.uTime, frame);
 		glUniformMatrix4fv(uniforms.uView, 1, false, glm::value_ptr(person.Camera.GetViewMatrix()));
 		glUniformMatrix4fv(uniforms.uProj, 1, false, glm::value_ptr(person.Camera.GetProjectionMatrix()));
+		glUniform1f(uniforms.uViewCone, glm::radians(viewCone));
+		glUniform1f(uniforms.uFocusDistance, focusDistance);
 
 		// Draw full screen quad with the path tracer shader
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -213,40 +192,53 @@ public:
 	bool interactive = false;
 	bool focal = false;
 	bool fullscreen = false;
-	void eventRender(SDL_Event event) override
+	void eventRender(std::deque<SDL_Event>& events) override
 	{
-		AppWindow::eventRender(event);
-		switch (event.type)
+		AppWindow::eventRender(events);
+		if (ProjectSettings::swapShaders)
 		{
-		case SDL_MOUSEMOTION:
-			if (focal)
+			swapScreens();
+			ProjectSettings::swapShaders = false;
+		}
+		for (auto& event : events)
+		{
+			switch (event.type)
 			{
-				glUniform2f(uniforms.uMouse, event.motion.x, event.motion.y);
-			}
-			break;
-		case SDL_KEYUP:
-			switch (event.key.keysym.sym)
-			{
-			case SDL_KeyCode::SDLK_r:
-				recompileFragmentSh();
-				GlHelpers::linkProgram(program);
-				bindUniforms();
-				glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
-				break;
-			case SDL_KeyCode::SDLK_l:
-				if (ScreenType == ScreenType::Flat)
+			case SDL_MOUSEMOTION:
+				if (focal)
 				{
-					ScreenType = ScreenType::LookingGlass;
-					swapShaders(fFlatShader, fShader);
-				}
-				else
-				{
-					ScreenType = ScreenType::Flat;
-					swapShaders(fShader, fFlatShader);
+					glUniform2f(uniforms.uMouse, event.motion.x, event.motion.y);
 				}
 				break;
+			case SDL_KEYUP:
+				switch (event.key.keysym.sym)
+				{
+				case SDL_KeyCode::SDLK_r:
+					recompileFragmentSh();
+					GlHelpers::linkProgram(program);
+					bindUniforms();
+					glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
+					break;
+				case SDL_KeyCode::SDLK_l:
+					swapScreens();
+					break;
+				}
+				break;
 			}
-			break;
+		}
+	}
+
+	void swapScreens()
+	{
+		if (GlobalScreenType == ScreenType::Flat)
+		{
+			GlobalScreenType = ScreenType::LookingGlass;
+			swapShaders(fFlatShader, fShader);
+		}
+		else
+		{
+			GlobalScreenType = ScreenType::Flat;
+			swapShaders(fShader, fFlatShader);
 		}
 	}
 

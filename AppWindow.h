@@ -7,7 +7,7 @@
 #include "imgui_internal.h"
 #include <GL/glew.h>
 #include "Helpers.h"
-#include <mutex>
+#include <deque>
 
 
 class AppWindow {
@@ -22,7 +22,7 @@ public:
 	float windowHeight;
 	float windowPosX;
 	float windowPosY;
-	float powerSave = true;
+	bool powerSave = true;
 	Uint32 windowID;
 	bool close = false;
 	// Runs on tha main thread
@@ -94,7 +94,7 @@ public:
 		ImGui::NewFrame();
 	}
 
-	void unsetContext()
+	void flushRender()
 	{
 		ImGui::Render();
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -102,47 +102,50 @@ public:
 	}
 
 	// Event handler on the rendering thread
-	virtual void eventRender(SDL_Event event)
+	virtual void eventRender(std::deque<SDL_Event>& events)
 	{
-		switch (event.type)
+		for (auto& event : events)
 		{
-		case SDL_WINDOWEVENT:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			switch (event.window.event)
+			switch (event.type)
 			{
-			case SDL_WINDOWEVENT_RESIZED:
-				windowWidth = event.window.data1;
-				windowHeight = event.window.data2;
-				resized();
+			case SDL_WINDOWEVENT:
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				switch (event.window.event)
+				{
+				case SDL_WINDOWEVENT_RESIZED:
+					windowWidth = event.window.data1;
+					windowHeight = event.window.data2;
+					resized();
+					break;
+				case SDL_WINDOWEVENT_MOVED:
+					windowPosX = event.window.data1;
+					windowPosY = event.window.data2;
+					ImGui::GetStyle().ScaleAllSizes(pixelScale);
+					io.FontGlobalScale = pixelScale;
+					moved();
+					break;
+				}
 				break;
-			case SDL_WINDOWEVENT_MOVED:
-				windowPosX = event.window.data1;
-				windowPosY = event.window.data2;
-				ImGui::GetStyle().ScaleAllSizes(pixelScale);
-				io.FontGlobalScale = pixelScale;
-				moved();
+			case SDL_MOUSEMOTION:
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				break;
+			case SDL_MOUSEBUTTONDOWN:
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				std::cout << "down" << std::rand() << "\n";
+				break;
+			case SDL_MOUSEBUTTONUP:
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				break;
+			case SDL_MOUSEWHEEL:
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				break;
+			case SDL_KEYUP:
+				ImGui_ImplSDL2_ProcessEvent(&event);
+				break;
+			case SDL_KEYDOWN:
+				ImGui_ImplSDL2_ProcessEvent(&event);
 				break;
 			}
-			break;
-		case SDL_MOUSEMOTION:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_MOUSEBUTTONDOWN:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			std::cout << "down" << std::rand() << "\n";
-			break;
-		case SDL_MOUSEBUTTONUP:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_MOUSEWHEEL:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_KEYUP:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_KEYDOWN:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
 		}
 	}
 

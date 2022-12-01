@@ -28,6 +28,7 @@ glm::mat4 MouseCamera::GetViewProjectionMatrix() const
 
 void MouseCamera::SetProjectionMatrixPerspective(float fov, float aspect, float nearclip, float farclip)
 {
+	Aspect = aspect;
 	_projectionMatrix = glm::perspective(glm::radians(fov), aspect, nearclip, farclip);
 }
 
