@@ -51,5 +51,5 @@ void FirstPersonController::Update(float deltaTime, bool mouseLocked, SDL_Event 
 
 	velocity += moveForce * speed;
 
-	this->Camera.SetPosition(this->Camera.GetPosition() + glm::vec3(velocity.x, velocity.y, velocity.z));
+	this->Camera.SetPosition(this->Camera.GetPosition() + glm::vec3(velocity.x, velocity.y, velocity.z) * deltaTime);
 }

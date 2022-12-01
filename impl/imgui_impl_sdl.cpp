@@ -244,6 +244,7 @@ static void ImGui_ImplSDL2_UpdateKeyModifiers(SDL_Keymod sdl_key_mods)
 	io.KeyShift = shift;
 	io.KeyAlt = alt;
 	io.KeySuper = super;
+	io.KeyMods = ImGui::GetMergedModFlags();
 	io.AddKeyEvent(ImGuiKey_LeftCtrl, ctrl);
 	io.AddKeyEvent(ImGuiKey_LeftShift, shift);
 	io.AddKeyEvent(ImGuiKey_LeftAlt, alt);

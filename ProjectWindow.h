@@ -22,49 +22,47 @@ struct {
 	GLint uProj;
 } uniforms;
 
-class App {
+class ProjectWindow : public AppWindow {
 public:
-	static inline GLuint fShader;
-	static inline GLuint fFlatShader;
-	static inline GLuint vShader;
-	static inline GLuint program;
-	static inline Calibration calibration;
-	static inline GLuint fullScreenVAO;
-	static inline GLuint fullScreenVertexBuffer;
-	static inline GLuint uCalibrationHandle;
-	static inline float windowWidth;
-	static inline float windowHeight;
-	static inline float fov = 60;
-	static inline float farPlane = 1000;
-	static inline float nearPlane = 0.1;
-	static inline FirstPersonController person;
-	static inline long lastTime;
-	static inline SDL_Window* window;
-	static inline enum class ScreenType {
+	GLuint fShader;
+	GLuint fFlatShader;
+	GLuint vShader;
+	GLuint program;
+	Calibration calibration;
+	GLuint fullScreenVAO;
+	GLuint fullScreenVertexBuffer;
+	GLuint uCalibrationHandle;
+	float fov = 60;
+	float farPlane = 1000;
+	float nearPlane = 0.1;
+	FirstPersonController person;
+	enum class ScreenType {
 		Flat = 0, LookingGlass = 1
 	} ScreenType;
-	static inline int intWidth, intHeight;
-	static inline float pixelScale = 0;
-	static void setup(ImGuiIO& io, SDL_Window* wnd, float x, float y, float w, float h, float pixelScal, bool forceFlat = false)
-	{
-		window = wnd;
-		GlHelpers::initCallback();
-		person.Camera.Sensitivity = 0.000001f;
-		windowWidth = w;
-		windowHeight = h;
-		pixelScale = pixelScal;
-		ImGui::GetStyle().ScaleAllSizes(pixelScale);
-		io.FontGlobalScale = pixelScale;
 
-		std::cout << "Pixel scale: " << pixelScale << std::endl;
+	ProjectWindow(const char* name, float x, float y, float w, float h, bool forceFlat = false)
+		: AppWindow(name, x, y, w, h)
+	{
+		powerSave = false;
+
+		std::cout << "Pixel scale: " << this->pixelScale << std::endl;
 		if (forceFlat)
 		{
 			std::cout << "Forced flat screen." << std::endl;
+			ScreenType = ScreenType::Flat;
 		}
 		else
 		{
 			extractCalibration();
 		}
+	}
+
+	// Runs on the render thread
+	void setupGL() override
+	{
+		AppWindow::setupGL();
+		GlHelpers::initCallback();
+
 		program = glCreateProgram();
 		GlHelpers::compileShader<GL_VERTEX_SHADER>(Helpers::relativeToExecutable("vertex.vert").string(), vShader, {});
 		glAttachShader(program, vShader);
@@ -104,18 +102,17 @@ public:
 		glUniform1f(uniforms.uTime, 0);
 		// These are one-time set uniforms
 		glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
-		glUniform2f(uniforms.uWindowPos, x, y);
+		glUniform2f(uniforms.uWindowPos, windowPosX, windowPosY);
 		glUniform2f(uniforms.uMouse, 0.5f, 0.5f);
 
 		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
 		person.Camera.SetCenter(glm::vec2(windowWidth / 2, windowHeight / 2));
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-		lastTime = SDL_GetPerformanceCounter();
 	}
 	/**
 	* Sets calibration and ScreenType
 	*/
-	static inline void extractCalibration()
+	void extractCalibration()
 	{
 		ScreenType = ScreenType::Flat;
 		try {
@@ -139,7 +136,7 @@ public:
 		}
 	}
 
-	static void bindUniforms()
+	void bindUniforms()
 	{
 		uniforms = {
 			glGetUniformLocation(program, "uTime"),
@@ -151,7 +148,7 @@ public:
 		};
 	}
 
-	static void recompileFragmentSh()
+	void recompileFragmentSh()
 	{
 		// Will produce errors if the shader is not compiled yet but c'est la vie
 		GLsizei count;
@@ -173,38 +170,54 @@ public:
 		glAttachShader(program, ScreenType == ScreenType::Flat ? fFlatShader : fShader);
 	}
 
-	static inline float f;
-	static inline int counter = 0;
-	static inline float frame = 1;
-	static inline bool interactive = false;
-	static inline bool focal = false;
-	static void draw(ImGuiIO& io, SDL_Event event)
+	void draw() override
 	{
-		auto now = SDL_GetPerformanceCounter();
-		float deltaTime = (now - lastTime) / (float)SDL_GetPerformanceFrequency();
-		if (interactive)
+		AppWindow::draw();
+
+		ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
+		if (ImGui::RadioButton("Looking Glass", (int*)&ScreenType, (int)ScreenType::LookingGlass))
 		{
-			person.Update(deltaTime, false, event);
+			swapShaders(fFlatShader, fShader);
 		}
+		if (ImGui::RadioButton("Flat", (int*)&ScreenType, (int)ScreenType::Flat))
+		{
+			swapShaders(fShader, fFlatShader);
+		}
+
+		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
+
+		ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+
+		if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+			counter++;
+		ImGui::SameLine();
+		ImGui::Text("counter = %d", counter);
+
+		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+		ImGui::End();
+
+		glBindVertexArray(fullScreenVAO);
+		glUseProgram(program);
+		glUniform1f(uniforms.uTime, frame);
+		glUniformMatrix4fv(uniforms.uView, 1, false, glm::value_ptr(person.Camera.GetViewMatrix()));
+		glUniformMatrix4fv(uniforms.uProj, 1, false, glm::value_ptr(person.Camera.GetProjectionMatrix()));
+
+		// Draw full screen quad with the path tracer shader
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		frame++;
+	}
+
+	float f;
+	int counter = 0;
+	float frame = 1;
+	bool interactive = false;
+	bool focal = false;
+	bool fullscreen = false;
+	void eventRender(SDL_Event event) override
+	{
+		AppWindow::eventRender(event);
 		switch (event.type)
 		{
-		case SDL_WINDOWEVENT:
-			switch (event.window.event)
-			{
-			case SDL_WINDOWEVENT_RESIZED:
-				windowWidth = event.window.data1;
-				windowHeight = event.window.data2;
-				glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
-				person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
-				break;
-			case SDL_WINDOWEVENT_MOVED:
-				glUniform2f(uniforms.uWindowPos, event.window.data1, event.window.data2);
-				pixelScale = Helpers::GetVirtualPixelScale(window);
-				ImGui::GetStyle().ScaleAllSizes(pixelScale);
-				io.FontGlobalScale = pixelScale;
-				break;
-			}
-			break;
 		case SDL_MOUSEMOTION:
 			if (focal)
 			{
@@ -232,53 +245,75 @@ public:
 					swapShaders(fShader, fFlatShader);
 				}
 				break;
+			}
+			break;
+		}
+	}
+
+	bool eventWork(SDL_Event event, float deltaTime) override
+	{
+		if (interactive)
+		{
+			person.Update(deltaTime, false, event);
+		}
+		switch (event.type)
+		{
+		case SDL_KEYUP:
+			switch (event.key.keysym.sym)
+			{
 			case SDL_KeyCode::SDLK_i:
 				interactive = !interactive;
 				break;
 			case SDL_KeyCode::SDLK_m:
 				focal = !focal;
 				break;
+			case SDLK_ESCAPE:
+				return true;
+			case SDLK_f:
+				fullscreen = !fullscreen;
+				if (fullscreen)
+				{
+					SDL_SetWindowFullscreen(window, flags | SDL_WINDOW_FULLSCREEN_DESKTOP);
+				}
+				else
+				{
+					SDL_SetWindowFullscreen(window, flags);
+				}
+				break;
+			case SDLK_p:
+				powerSave = !powerSave;
+				break;
+			}
+			break;
+		case SDL_WINDOWEVENT:
+			switch (event.window.event)
+			{
+			case SDL_WINDOWEVENT_CLOSE:
+				close = true;
+				break;
 			}
 			break;
 		}
-		glBindVertexArray(fullScreenVAO);
-		glUseProgram(program);
-		glUniform1f(uniforms.uTime, frame);
-		glUniformMatrix4fv(uniforms.uView, 1, false, glm::value_ptr(person.Camera.GetViewMatrix()));
-		glUniformMatrix4fv(uniforms.uProj, 1, false, glm::value_ptr(person.Camera.GetProjectionMatrix()));
-
-		ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-		if (ImGui::RadioButton("Looking Glass", (int*)&ScreenType, (int)ScreenType::LookingGlass))
-		{
-			swapShaders(fFlatShader, fShader);
-		}
-		if (ImGui::RadioButton("Flat", (int*)&ScreenType, (int)ScreenType::Flat))
-		{
-			swapShaders(fShader, fFlatShader);
-		}
-
-		ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-
-		ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-
-		if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-			counter++;
-		ImGui::SameLine();
-		ImGui::Text("counter = %d", counter);
-
-		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-		ImGui::End();
-
-		// Draw full screen quad with the path tracer shader
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-		frame++;
+		return false;
 	}
-	static void swapShaders(GLuint before, GLuint after)
+	void swapShaders(GLuint before, GLuint after)
 	{
 		glDetachShader(program, before);
 		glAttachShader(program, after);
 		GlHelpers::linkProgram(program);
 		bindUniforms();
 		glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
+	}
+
+	void resized() override
+	{
+		AppWindow::resized();
+		glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
+		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
+	}
+	void moved() override
+	{
+		AppWindow::moved();
+		glUniform2f(uniforms.uWindowPos, windowPosX, windowPosY);
 	}
 };

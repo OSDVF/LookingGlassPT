@@ -2,6 +2,7 @@
 //
 
 #include "LookingGlassPT.h"
+#include <iostream>
 #include <SDL2/SDL.h>
 #undef main
 #include <GL/glew.h>
@@ -10,12 +11,15 @@
 #include "impl/imgui_impl_opengl3.h"
 #include "impl/imgui_impl_sdl.h"
 #include "imgui_internal.h"
-#include "App.h"
+#include "ControlWindow.h"
+#include "ProjectWindow.h"
+#include <thread>
+#include <deque>
 #define WINDOW_X 500
 #define WINDOW_Y 100
 #define WINDOW_W 640
 #define WINDOW_H 480
-ImGuiIO io;
+
 int main(int argc, const char** argv)
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
@@ -33,35 +37,7 @@ int main(int argc, const char** argv)
 
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-	auto windowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI;
-	SDL_Window* window = SDL_CreateWindow("Looking Glass Path Tracer Demo", WINDOW_X, WINDOW_Y,
-		WINDOW_W, WINDOW_H, windowFlags);
-
-	assert(window);
-	SDL_GLContext context = SDL_GL_CreateContext(window);
-	SDL_GL_MakeCurrent(window, context);
-
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	io = ImGui::GetIO(); (void)io;
-	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-	ImGui::StyleColorsDark();
-	//ImGui::StyleColorsLight();
-
-	// Setup Platform/Renderer backends
-	ImGui_ImplSDL2_InitForOpenGL(window, context);
-	ImGui_ImplOpenGL3_Init("#version 420");
-
-	glewExperimental = true;
-	if (glewInit() != GLEW_OK) {
-		std::cerr << "Failed to initialize GLEW" << std::endl;
-		return 2;
-	}
-
-	bool playing = true;
-	bool fullscreen = false;
 	bool forceFlat = false;
-	bool powerSave = false;
 	if (argc > 1)
 	{
 		if (std::string("flat") == argv[1])
@@ -69,103 +45,127 @@ int main(int argc, const char** argv)
 			forceFlat = true;
 		}
 	}
-	float pixelSize = Helpers::GetVirtualPixelScale(window);
-	App::setup(io,
-		window,
-		WINDOW_X,
-		WINDOW_Y,
-		WINDOW_W,
-		WINDOW_H,
-		pixelSize,
-		forceFlat
-	);
-	while (playing)
-	{
-		SDL_Event event;
-		powerSave ? SDL_WaitEvent(&event) : SDL_PollEvent(&event);
+	IMGUI_CHECKVERSION();
 
-		switch (event.type)
+	std::array<AppWindow*, 2> windows;
+	auto projectWindow = ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 2, forceFlat);
+	auto controlWindow = ControlWindow("Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H);
+	windows[0] = &projectWindow;
+	windows[1] = &controlWindow;
+
+	std::array<std::deque<SDL_Event>, windows.size()> eventQueues;
+
+	bool exit = false;
+	auto lastTime = SDL_GetPerformanceCounter();
+	std::thread renderThread([&windows, &eventQueues, &exit] {
+		Helpers::SetThreadName("Drawing Thread");
+	for (auto window : windows)
+	{
+		window->setupGL();
+	}
+	while (!exit)
+	{
+		for (int i = 0; i < windows.size(); i++)
 		{
-		case SDL_QUIT:
-			playing = false;
-			break;
-		case SDL_MOUSEMOTION:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_MOUSEBUTTONDOWN:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_MOUSEBUTTONUP:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_MOUSEWHEEL:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_KEYUP:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			switch (event.key.keysym.sym)
+			auto& window = windows[i];
+			if (window != nullptr)
 			{
-			case SDLK_ESCAPE:
-				playing = 0;
-				break;
-			case SDLK_f:
-				fullscreen = !fullscreen;
-				if (fullscreen)
+				auto& events = eventQueues[i];
+				// There is not any mutex because it is a non-critical critical section :)
+				if (window->close)
 				{
-					SDL_SetWindowFullscreen(window, windowFlags | SDL_WINDOW_FULLSCREEN_DESKTOP);
+					events.clear();
+					closeWindow(window);
+					window = nullptr;
 				}
 				else
 				{
-					SDL_SetWindowFullscreen(window, windowFlags);
+					window->setContext();
+					while (events.size() > 0)
+					{
+						auto ev = events.front();
+						window->eventRender(ev);
+						events.pop_front();
+					}
+					window->draw();
+					window->unsetContext();
+				}
+			}
+		}
+	}
+		}
+	);
+
+	// Main thread does the event loop
+	Uint32 focusedWindow = -1;
+	while (!exit)
+	{
+
+		SDL_Event event;
+		bool powerSave = true;
+		for (auto& window : windows)
+		{
+			if (window != nullptr)
+			{
+				powerSave = powerSave && window->powerSave;
+			}
+		}
+		bool hasEvent = powerSave ? SDL_WaitEvent(&event) : SDL_PollEvent(&event);
+		auto now = SDL_GetPerformanceCounter();
+		float deltaTime = 1000*((now - lastTime) / (float)SDL_GetPerformanceFrequency());
+		lastTime = now;
+		if (hasEvent)
+		{
+			std::cout << event.type << std::endl;
+			switch (event.type)
+			{
+			case SDL_WINDOWEVENT:
+				switch (event.window.event)
+				{
+				case SDL_WINDOWEVENT_FOCUS_GAINED:
+					focusedWindow = event.window.windowID;
+					break;
+				case SDL_WINDOWEVENT_TAKE_FOCUS:
+					focusedWindow = event.window.windowID;
+					break;
 				}
 				break;
-			case SDLK_p:
-				powerSave = !powerSave;
-				break;
-			default:
-				break;
 			}
-			break;
-		case SDL_KEYDOWN:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_WINDOWEVENT:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			if (event.window.event == SDL_WINDOWEVENT_RESIZED)
-			{
-				float w = event.window.data1;
-				float h = event.window.data2;
-				glViewport(0, 0, w, h);
-			}
-			break;
 		}
-		draw(window, event);
-
+		for (int i = 0; i < windows.size(); i++)
+		{
+			auto window = windows[i];
+			if (window != nullptr)
+			{
+				if (hasEvent)
+				{
+					if (window->windowID == focusedWindow ||
+						(event.type == SDL_WINDOWEVENT && window->windowID == event.window.windowID))
+					{
+						eventQueues[i].push_front(event);
+						exit = window->eventWork(event, deltaTime);
+					}
+				}
+				else
+				{
+					// Do working on an empty event
+					window->eventWork(event, deltaTime);
+				}
+			}
+		}
 	}
 
-	// Cleanup
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplSDL2_Shutdown();
-	ImGui::DestroyContext();
+	renderThread.join();
 
-	SDL_GL_DeleteContext(context);
-	SDL_DestroyWindow(window);
 	atexit(SDL_Quit);
-
 	return 0;
 }
 
-void draw(SDL_Window* window, SDL_Event event)
+void closeWindow(AppWindow* window)
 {
-	// Start the Dear ImGui frame
-	ImGui_ImplOpenGL3_NewFrame();
-	ImGui_ImplSDL2_NewFrame();
-	ImGui::NewFrame();
-
-	App::draw(io, event);
-
-	ImGui::Render();
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-	SDL_GL_SwapWindow(window);
+	ImGui::DestroyContext(window->imGuiContext);
+	SDL_GL_DeleteContext(window->glContext);
+	SDL_DestroyWindow(window->window);
 }
+
+
