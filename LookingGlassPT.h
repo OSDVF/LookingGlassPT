@@ -3,5 +3,5 @@
 #include <deque>
 #include <SDL.h>
 
-void closeWindow(AppWindow* window);
+void destroyWindow(AppWindow* window);
 void processEventsOnRender(std::deque<SDL_Event>& events, AppWindow*& window);

@@ -16,7 +16,6 @@
 #include "ControlWindow.h"
 #include "ProjectWindow.h"
 #include <thread>
-#include <deque>
 #define WINDOW_X 500
 #define WINDOW_Y 100
 #define WINDOW_W 640
@@ -63,11 +62,10 @@ int main(int argc, const char** argv)
 	}
 	IMGUI_CHECKVERSION();
 
-	std::array<AppWindow*, 2> windows;
-	auto projectWindow = new ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 2, forceFlat);
-	auto controlWindow = new ControlWindow("Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H);
-	windows[0] = projectWindow;
-	windows[1] = controlWindow;
+	std::array<AppWindow*, 2> windows = {
+	new ControlWindow(windows, "Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H),
+	new ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 2, forceFlat),
+	};
 
 	std::array<std::deque<SDL_Event>, windows.size()> eventQueues;
 
@@ -86,23 +84,26 @@ int main(int argc, const char** argv)
 			auto& window = windows[i];
 			if (window != nullptr)
 			{
-				auto& events = eventQueues[i];
-				// There is not any mutex because it is a non-critical critical section :)
-				if (window->close)
+				if (!window->hidden)
 				{
-					events.clear();
-					closeWindow(window);
-					window = nullptr;
-				}
-				else
-				{
-					if (!window->powerSave || events.size() > 0)
+					auto& events = eventQueues[i];
+					// There is not any mutex because it is a non-critical critical section :)
+					if (window->destroyMe)
 					{
-						// Redraw if there was an event or if the window wants to be rendered continuously
-						window->setContext();
-						processEventsOnRender(events, window);
-						window->draw();
-						window->flushRender();
+						events.clear();
+						destroyWindow(window);
+						window = nullptr;
+					}
+					else
+					{
+						if (!window->powerSave || events.size() > 0)
+						{
+							// Redraw if there was an event or if the window wants to be rendered continuously
+							window->setContext();
+							processEventsOnRender(events, window);
+							window->draw();
+							window->flushRender();
+						}
 					}
 				}
 			}
@@ -158,7 +159,7 @@ int main(int argc, const char** argv)
 					{
 						try
 						{
-							eventQueues[i].push_front(event);
+							eventQueues[i].push_back(event);
 						}
 						catch (std::exception)
 						{
@@ -193,7 +194,7 @@ void processEventsOnRender(std::deque<SDL_Event>& events, AppWindow*& window)
 	events.clear();
 }
 
-void closeWindow(AppWindow* window)
+void destroyWindow(AppWindow* window)
 {
 	ImGui::DestroyContext(window->imGuiContext);
 	SDL_GL_DeleteContext(window->glContext);

@@ -1,5 +1,6 @@
 #pragma once
 #include <iostream>
+#include <deque>
 #include <SDL.h>
 #include <imgui.h>
 #include "impl/imgui_impl_opengl3.h"
@@ -7,7 +8,6 @@
 #include "imgui_internal.h"
 #include <GL/glew.h>
 #include "Helpers.h"
-#include <deque>
 
 
 class AppWindow {
@@ -24,7 +24,8 @@ public:
 	float windowPosY;
 	bool powerSave = true;
 	Uint32 windowID;
-	bool close = false;
+	bool destroyMe = false;
+	bool hidden = false;
 	// Runs on tha main thread
 	AppWindow(const char* name, float x, float y, float w, float h)
 	{
@@ -102,7 +103,7 @@ public:
 	}
 
 	// Event handler on the rendering thread
-	virtual void eventRender(std::deque<SDL_Event>& events)
+	virtual void eventRender(std::deque<SDL_Event> events)
 	{
 		for (auto& event : events)
 		{
@@ -131,7 +132,6 @@ public:
 				break;
 			case SDL_MOUSEBUTTONDOWN:
 				ImGui_ImplSDL2_ProcessEvent(&event);
-				std::cout << "down" << std::rand() << "\n";
 				break;
 			case SDL_MOUSEBUTTONUP:
 				ImGui_ImplSDL2_ProcessEvent(&event);
@@ -151,6 +151,24 @@ public:
 
 	// Event handling on worker thread
 	virtual bool eventWork(SDL_Event event, float deltaTime) = 0;
+
+	void hide()
+	{
+		if (!hidden)
+		{
+			SDL_HideWindow(window);
+			hidden = true;
+		}
+	}
+
+	void show()
+	{
+		if (hidden)
+		{
+			SDL_ShowWindow(window);
+			hidden = false;
+		}
+	}
 
 	~AppWindow()
 	{

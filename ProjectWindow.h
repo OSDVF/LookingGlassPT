@@ -192,7 +192,7 @@ public:
 	bool interactive = false;
 	bool focal = false;
 	bool fullscreen = false;
-	void eventRender(std::deque<SDL_Event>& events) override
+	void eventRender(std::deque<SDL_Event> events) override
 	{
 		AppWindow::eventRender(events);
 		if (ProjectSettings::swapShaders)
@@ -281,7 +281,7 @@ public:
 			switch (event.window.event)
 			{
 			case SDL_WINDOWEVENT_CLOSE:
-				close = true;
+				hide();
 				break;
 			}
 			break;
