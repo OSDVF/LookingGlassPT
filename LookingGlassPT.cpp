@@ -193,8 +193,15 @@ int main(int argc, const char** argv)
 // Read dispatched events on render thread
 void processEventsOnRender(std::deque<SDL_Event>& events, AppWindow*& window)
 {
-	std::unique_lock lck(queMut);
-	window->eventRender(events);
+	std::unique_lock lck(queMut, std::defer_lock);
+	if (!window->hidden)
+	{
+		lck.lock();
+	}
+	std::deque<SDL_Event> eventsCopy = events;
+	lck.unlock();
+	window->eventRender(eventsCopy);
+	lck.lock();
 	events.clear();
 }
 
