@@ -35,11 +35,11 @@ public:
 	GLuint fullScreenVAO;
 	GLuint fullScreenVertexBuffer;
 	GLuint uCalibrationHandle;
-	
+
 	ProjectWindow(const char* name, float x, float y, float w, float h, bool forceFlat = false)
 		: AppWindow(name, x, y, w, h)
 	{
-		powerSave = false;
+		eventDriven = false;
 
 		std::cout << "Pixel scale: " << this->pixelScale << std::endl;
 		if (forceFlat)
@@ -168,8 +168,20 @@ public:
 		glAttachShader(program, GlobalScreenType == ScreenType::Flat ? fFlatShader : fShader);
 	}
 
-	void draw() override
+	void render() override
 	{
+		if (ProjectSettings::changeScreenType)
+		{
+			swapScreens();
+			ProjectSettings::changeScreenType = false;
+		}
+		if (ProjectSettings::recompileFShaders)
+		{
+			recompileFragmentSh();
+			GlHelpers::linkProgram(program);
+			bindUniforms();
+			glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
+		}
 		ImGui::Begin("Info");
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::End();
@@ -180,6 +192,7 @@ public:
 		glUniformMatrix4fv(uniforms.uProj, 1, false, glm::value_ptr(person.Camera.GetProjectionMatrix()));
 		glUniform1f(uniforms.uViewCone, glm::radians(viewCone));
 		glUniform1f(uniforms.uFocusDistance, focusDistance);
+		glUniform2f(uniforms.uMouse, mouseX, mouseY);
 
 		// Draw full screen quad with the path tracer shader
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -192,41 +205,6 @@ public:
 	bool interactive = false;
 	bool focal = false;
 	bool fullscreen = false;
-	void eventRender(std::deque<SDL_Event> events) override
-	{
-		AppWindow::eventRender(events);
-		if (ProjectSettings::swapShaders)
-		{
-			swapScreens();
-			ProjectSettings::swapShaders = false;
-		}
-		for (auto& event : events)
-		{
-			switch (event.type)
-			{
-			case SDL_MOUSEMOTION:
-				if (focal)
-				{
-					glUniform2f(uniforms.uMouse, event.motion.x, event.motion.y);
-				}
-				break;
-			case SDL_KEYUP:
-				switch (event.key.keysym.sym)
-				{
-				case SDL_KeyCode::SDLK_r:
-					recompileFragmentSh();
-					GlHelpers::linkProgram(program);
-					bindUniforms();
-					glUniform2f(uniforms.uWindowSize, windowWidth, windowHeight);
-					break;
-				case SDL_KeyCode::SDLK_l:
-					swapScreens();
-					break;
-				}
-				break;
-			}
-		}
-	}
 
 	void swapScreens()
 	{
@@ -242,7 +220,13 @@ public:
 		}
 	}
 
-	bool eventWork(SDL_Event event, float deltaTime) override
+	void renderOnEvent(std::deque<SDL_Event>e) override
+	{
+		AppWindow::renderOnEvent(e);
+		render();
+	}
+
+	bool workOnEvent(SDL_Event event, float deltaTime) override
 	{
 		if (interactive)
 		{
@@ -273,7 +257,13 @@ public:
 				}
 				break;
 			case SDLK_p:
-				powerSave = !powerSave;
+				eventDriven = !eventDriven;
+				break;
+			case SDL_KeyCode::SDLK_r:
+				ProjectSettings::recompileFShaders = true;
+				break;
+			case SDL_KeyCode::SDLK_l:
+				ProjectSettings::changeScreenType = true;
 				break;
 			}
 			break;
@@ -283,6 +273,13 @@ public:
 			case SDL_WINDOWEVENT_CLOSE:
 				hide();
 				break;
+			}
+			break;
+		case SDL_MOUSEMOTION:
+			if (focal)
+			{
+				mouseX = event.motion.x;
+				mouseY = event.motion.y;
 			}
 			break;
 		}

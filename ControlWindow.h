@@ -15,19 +15,19 @@ public:
 
 	}
 	// Redraws only when a event occurs
-	void eventRender(std::deque<SDL_Event> events) override
+	void renderOnEvent(std::deque<SDL_Event> events) override
 	{
-		AppWindow::eventRender(events);
+		AppWindow::renderOnEvent(events);
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
 		ImGui::SetNextWindowSize(ImVec2(windowWidth, windowHeight));
 		ImGui::Begin("Settings", 0, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);                          // Create a window called "Hello, world!" and append into it.
 		if (ImGui::RadioButton("Looking Glass", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::LookingGlass))
 		{
-			ProjectSettings::swapShaders = true;
+			ProjectSettings::changeScreenType = true;
 		}
 		if (ImGui::RadioButton("Flat", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::Flat))
 		{
-			ProjectSettings::swapShaders = true;
+			ProjectSettings::changeScreenType = true;
 		}
 		bool cameraEdited = ImGui::SliderFloat("FOV", &ProjectSettings::fov, 30.f, 100.f);
 		cameraEdited = ImGui::SliderFloat("Near Plane", &ProjectSettings::nearPlane, 0.01f, 1) || cameraEdited;
@@ -65,11 +65,9 @@ public:
 		ImGui::SliderFloat("View Cone", &ProjectSettings::viewCone, 10.f, 80.f);
 		ImGui::SliderFloat("Focus Distance", &ProjectSettings::focusDistance, 0.f, 40.f);
 
-
-
 		ImGui::End();
 	}
-	bool eventWork(SDL_Event event, float deltaTime) override
+	bool workOnEvent(SDL_Event event, float deltaTime) override
 	{
 		switch (event.type)
 		{

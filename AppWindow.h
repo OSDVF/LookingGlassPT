@@ -15,14 +15,15 @@ public:
 	SDL_Window* window;
 	SDL_WindowFlags flags = static_cast<SDL_WindowFlags>(SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
 	SDL_GLContext glContext;
-	ImGuiContext* imGuiContext;
+	ImGuiContext* imGuiContext = nullptr;
 	ImGuiIO io;
 	float pixelScale;
 	float windowWidth;
 	float windowHeight;
 	float windowPosX;
 	float windowPosY;
-	bool powerSave = true;
+	// Event-driven windows are power-saving and are getting renderOnEvent(), other are getting render() every frame
+	bool eventDriven = true;
 	Uint32 windowID;
 	bool destroyMe = false;
 	bool hidden = false;
@@ -52,8 +53,8 @@ public:
 			std::cerr << glewGetErrorString(initError) << std::endl;
 		}
 
-		imGuiContext = ImGui::CreateContext();
-		ImGui::SetCurrentContext(imGuiContext);
+		auto tempImCtx = ImGui::CreateContext();
+		ImGui::SetCurrentContext(tempImCtx);
 		io = ImGui::GetIO(); (void)io;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
 		ImGui::StyleColorsDark();
@@ -64,6 +65,7 @@ public:
 
 		ImGui::GetStyle().ScaleAllSizes(pixelScale);
 		io.FontGlobalScale = pixelScale;
+		imGuiContext = tempImCtx;
 	}
 
 	// On render thread
@@ -78,7 +80,7 @@ public:
 	}
 
 	// On render thread
-	virtual void draw()
+	virtual void render()
 	{
 	}
 
@@ -103,55 +105,60 @@ public:
 	}
 
 	// Event handler on the rendering thread
-	virtual void eventRender(std::deque<SDL_Event> events)
+	virtual void renderOnEvent(std::deque<SDL_Event> events)
 	{
 		for (auto& event : events)
 		{
-			switch (event.type)
+			processImGuiEvent(event);
+		}
+	}
+
+	void processImGuiEvent(SDL_Event& event)
+	{
+		switch (event.type)
+		{
+		case SDL_WINDOWEVENT:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			switch (event.window.event)
 			{
-			case SDL_WINDOWEVENT:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				switch (event.window.event)
-				{
-				case SDL_WINDOWEVENT_RESIZED:
-					windowWidth = event.window.data1;
-					windowHeight = event.window.data2;
-					resized();
-					break;
-				case SDL_WINDOWEVENT_MOVED:
-					windowPosX = event.window.data1;
-					windowPosY = event.window.data2;
-					pixelScale = Helpers::GetVirtualPixelScale(window);
-					ImGui::GetStyle().ScaleAllSizes(pixelScale);
-					io.FontGlobalScale = pixelScale;
-					moved();
-					break;
-				}
+			case SDL_WINDOWEVENT_RESIZED:
+				windowWidth = event.window.data1;
+				windowHeight = event.window.data2;
+				resized();
 				break;
-			case SDL_MOUSEMOTION:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				break;
-			case SDL_MOUSEBUTTONDOWN:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				break;
-			case SDL_MOUSEBUTTONUP:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				break;
-			case SDL_MOUSEWHEEL:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				break;
-			case SDL_KEYUP:
-				ImGui_ImplSDL2_ProcessEvent(&event);
-				break;
-			case SDL_KEYDOWN:
-				ImGui_ImplSDL2_ProcessEvent(&event);
+			case SDL_WINDOWEVENT_MOVED:
+				windowPosX = event.window.data1;
+				windowPosY = event.window.data2;
+				pixelScale = Helpers::GetVirtualPixelScale(window);
+				ImGui::GetStyle().ScaleAllSizes(pixelScale);
+				io.FontGlobalScale = pixelScale;
+				moved();
 				break;
 			}
+			break;
+		case SDL_MOUSEMOTION:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_MOUSEBUTTONDOWN:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_MOUSEBUTTONUP:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_MOUSEWHEEL:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_KEYUP:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
+		case SDL_KEYDOWN:
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			break;
 		}
 	}
 
 	// Event handling on worker thread
-	virtual bool eventWork(SDL_Event event, float deltaTime) = 0;
+	virtual bool workOnEvent(SDL_Event event, float deltaTime) = 0;
 
 	void hide()
 	{

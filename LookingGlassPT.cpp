@@ -98,12 +98,24 @@ int main(int argc, const char** argv)
 					}
 					else
 					{
-						if (!window->powerSave || events.size() > 0)
+						if (window->eventDriven)
 						{
-							// Redraw if there was an event or if the window wants to be rendered continuously
+							if (events.size() > 0)
+							{
+								window->setContext();
+								processEventsOnRender(events, window);
+								window->flushRender();
+							}
+						}
+						else
+						{
 							window->setContext();
-							processEventsOnRender(events, window);
-							window->draw();
+							while (events.size() > 0)
+							{
+								window->processImGuiEvent(events.front());
+								events.pop_front();
+							}
+							window->render();
 							window->flushRender();
 						}
 					}
@@ -120,15 +132,15 @@ int main(int argc, const char** argv)
 	{
 
 		SDL_Event event;
-		bool powerSave = true;
+		bool eventDriven = true;
 		for (auto& window : windows)
 		{
 			if (window != nullptr)
 			{
-				powerSave = powerSave && window->powerSave;
+				eventDriven = eventDriven && window->eventDriven;
 			}
 		}
-		bool hasEvent = powerSave ? SDL_WaitEvent(&event) : SDL_PollEvent(&event);
+		bool hasEvent = eventDriven ? SDL_WaitEvent(&event) : SDL_PollEvent(&event);
 		auto now = SDL_GetPerformanceCounter();
 		float deltaTime = 1000 * ((now - lastTime) / (float)SDL_GetPerformanceFrequency());
 		lastTime = now;
@@ -168,13 +180,13 @@ int main(int argc, const char** argv)
 						{
 							//Do nothing, probably a race condition occured
 						}
-						exit = window->eventWork(event, deltaTime);
+						exit = window->workOnEvent(event, deltaTime);
 					}
 				}
 				else
 				{
 					// Do working on an empty event
-					window->eventWork(event, deltaTime);
+					window->workOnEvent(event, deltaTime);
 				}
 			}
 		}
@@ -200,7 +212,7 @@ void processEventsOnRender(std::deque<SDL_Event>& events, AppWindow*& window)
 	}
 	std::deque<SDL_Event> eventsCopy = events;
 	lck.unlock();
-	window->eventRender(eventsCopy);
+	window->renderOnEvent(eventsCopy);
 	lck.lock();
 	events.clear();
 }
