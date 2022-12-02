@@ -16,11 +16,13 @@
 #include "ControlWindow.h"
 #include "ProjectWindow.h"
 #include <thread>
+#include <mutex>
 #define WINDOW_X 500
 #define WINDOW_Y 100
 #define WINDOW_W 640
 #define WINDOW_H 480
 
+std::mutex queMut;
 int main(int argc, const char** argv)
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
@@ -159,6 +161,7 @@ int main(int argc, const char** argv)
 					{
 						try
 						{
+							std::unique_lock lck(queMut);
 							eventQueues[i].push_back(event);
 						}
 						catch (std::exception)
@@ -190,6 +193,7 @@ int main(int argc, const char** argv)
 // Read dispatched events on render thread
 void processEventsOnRender(std::deque<SDL_Event>& events, AppWindow*& window)
 {
+	std::unique_lock lck(queMut);
 	window->eventRender(events);
 	events.clear();
 }

@@ -35,6 +35,7 @@ public:
 		windowPosX = x;
 		windowPosY = y;
 		windowID = SDL_GetWindowID(window);
+		pixelScale = Helpers::GetVirtualPixelScale(window);
 		assert(window);
 	}
 
@@ -61,7 +62,6 @@ public:
 		ImGui_ImplSDL2_InitForOpenGL(window, glContext);
 		ImGui_ImplOpenGL3_Init("#version 420");
 
-		pixelScale = Helpers::GetVirtualPixelScale(window);
 		ImGui::GetStyle().ScaleAllSizes(pixelScale);
 		io.FontGlobalScale = pixelScale;
 	}
@@ -121,6 +121,7 @@ public:
 				case SDL_WINDOWEVENT_MOVED:
 					windowPosX = event.window.data1;
 					windowPosY = event.window.data2;
+					pixelScale = Helpers::GetVirtualPixelScale(window);
 					ImGui::GetStyle().ScaleAllSizes(pixelScale);
 					io.FontGlobalScale = pixelScale;
 					moved();
