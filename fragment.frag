@@ -1,4 +1,4 @@
-//!#version 420
+//!#version 430
 #ifdef FLAT_SCREEN
 #define getRay getFlatScreenRay
 #else
@@ -21,6 +21,14 @@ uniform vec2 uWindowPos;
 uniform vec2 uMouse = vec2(0.5,0.5);
 uniform float uViewCone = radians(20); // 40 deg in rad
 uniform float uFocusDistance = 10;
+
+layout(std430, binding=1) buffer VertexBuffer {
+    vec3[] vertices;
+};
+
+layout(std430, binding=2) buffer IndexBuffer {
+    uint[] indices;
+};
 
 //TODO vyzkoušet jiné typy projekce, které budou generovat ménì artefaktù
 
@@ -94,7 +102,6 @@ Ray generateChaRay(){
 
 void getLookingGlassRay(vec2 pix, out Ray ray) {
     ray = generateChaRay();
-    ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x);
 }
 
 void getFlatScreenRay(vec2 pix, out Ray ray){
@@ -103,7 +110,6 @@ void getFlatScreenRay(vec2 pix, out Ray ray){
   vec3 pos = vec3(inverse(uView)*vec4(0,0,0,1));
 
   ray = Ray(pos, normalize(dir.xyz));
-  ray.origin = vec3(-ray.origin.z, ray.origin.y, ray.origin.x);
 }
 
 //https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
@@ -269,246 +275,108 @@ bool getRayObjectIntersection(AnalyticalObject object, Ray ray, out vec3 hitPosi
     }
 }
 
-// The MIT License
-// Copyright © 2019 Inigo Quilez
-// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions: The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-
-// A filtered xor pattern. Since an xor patterns is a series of checkerboard
-// patterns, I derived this one from https://www.shadertoy.com/view/XlcSz2
-
-// Other filterable simple procedural patterns:
-//
-// checker, 2D, box filter: https://www.shadertoy.com/view/XlcSz2
-// checker, 3D, box filter: https://www.shadertoy.com/view/XlXBWs
-// checker, 3D, tri filter: https://www.shadertoy.com/view/llffWs
-// grid,    2D, box filter: https://www.shadertoy.com/view/XtBfzz
-// xor,     2D, box filter: https://www.shadertoy.com/view/tdBXRW
-//
-// Article: https://iquilezles.org/articles/filterableprocedurals
-
-
-// --- analytically box-filtered xor pattern ---
-
-float xorTextureGradBox( in vec2 pos, in vec2 ddx, in vec2 ddy )
-{
-    float xor = 0.0;
-    for( int i=0; i<8; i++ )
+#define MOLLER_TRUMBORE
+#define CULLING
+const float kEpsilon = 1e-8; 
+bool rayTriangleIntersect( 
+    const vec3 orig, const vec3 dir, 
+    const vec3 v0, const vec3 v1, const vec3 v2, 
+    out float t, out float u, out float v) 
+{ 
+#ifdef MOLLER_TRUMBORE 
+    vec3 v0v1 = v1 - v0; 
+    vec3 v0v2 = v2 - v0; 
+    vec3 pvec = cross(dir, v0v2); 
+    float det = dot(v0v1, pvec); 
+#ifdef CULLING 
+    // if the determinant is negative the triangle is backfacing
+    // if the determinant is close to 0, the ray misses the triangle
+    if (det < kEpsilon) 
     {
-        // filter kernel
-        vec2 w = max(abs(ddx), abs(ddy)) + 0.01;  
-        // analytical integral (box filter)
-        vec2 f = 2.0*(abs(fract((pos-0.5*w)/2.0)-0.5)-abs(fract((pos+0.5*w)/2.0)-0.5))/w;
-        // xor pattern
-        xor += 0.5 - 0.5*f.x*f.y;
-        
-        // next octave        
-        ddx *= 0.5;
-        ddy *= 0.5;
-        pos *= 0.5;
-        xor *= 0.5;
+        return false; 
     }
-    return xor;
-}
-
-// --- unfiltered xor pattern ---
-
-float xorTexture( in vec2 pos )
-{
-    float xor = 0.0;
-    for( int i=0; i<8; i++ )
+#else 
+    // ray and triangle are parallel if det is close to 0
+    if (abs(det) < kEpsilon)
     {
-        xor += mod( floor(pos.x)+floor(pos.y), 2.0 );
-
-        pos *= 0.5;
-        xor *= 0.5;
+        return false; 
     }
-    return xor;
-}
-
-//===============================================================================================
-//===============================================================================================
-// sphere implementation
-//===============================================================================================
-//===============================================================================================
-
-float softShadowSphere( in vec3 ro, in vec3 rd, in vec4 sph )
-{
-    vec3 oc = sph.xyz - ro;
-    float b = dot( oc, rd );
-	
-    float res = 1.0;
-    if( b>0.0 )
+#endif 
+    float invDet = 1 / det; 
+ 
+    vec3 tvec = orig - v0; 
+    u = dot(tvec, pvec) * invDet; 
+    if (u < 0 || u > 1)
     {
-        float h = dot(oc,oc) - b*b - sph.w*sph.w;
-        res = smoothstep( 0.0, 1.0, 2.0*h/b );
+        return false;
     }
-    return res;
-}
-
-float occSphere( in vec4 sph, in vec3 pos, in vec3 nor )
-{
-    vec3 di = sph.xyz - pos;
-    float l = length(di);
-    return 1.0 - dot(nor,di/l)*sph.w*sph.w/(l*l); 
-}
-
-float iSphere( in vec3 ro, in vec3 rd, in vec4 sph )
-{
-    float t = -1.0;
-	vec3  ce = ro - sph.xyz;
-	float b = dot( rd, ce );
-	float c = dot( ce, ce ) - sph.w*sph.w;
-	float h = b*b - c;
-	if( h>0.0 )
-	{
-		t = -b - sqrt(h);
-	}
-	return t;
-}
-
-//===============================================================================================
-//===============================================================================================
-// scene
-//===============================================================================================
-//===============================================================================================
-
-
-// spheres
-const vec4 sc0 = vec4(  3.0, 0.5, 0.0, 0.5 );
-const vec4 sc1 = vec4( -4.0, 2.0,-5.0, 2.0 );
-const vec4 sc2 = vec4( -4.0, 2.0, 5.0, 2.0 );
-const vec4 sc3 = vec4(-30.0, 8.0, 0.0, 8.0 );
-
-float intersect( vec3 ro, vec3 rd, out vec3 pos, out vec3 nor, out float occ, out int matid )
-{
-    // raytrace
-	float tmin = 10000.0;
-	nor = vec3(0.0);
-	occ = 1.0;
-	pos = vec3(0.0);
-    matid = -1;
-	
-	// raytrace-plane
-	float h = (0.01-ro.y)/rd.y;
-	if( h>0.0 ) 
-	{ 
-		tmin = h; 
-		nor = vec3(0.0,1.0,0.0); 
-		pos = ro + h*rd;
-		matid = 0;
-		occ = occSphere( sc0, pos, nor ) * 
-			  occSphere( sc1, pos, nor ) *
-			  occSphere( sc2, pos, nor ) *
-			  occSphere( sc3, pos, nor );
-	}
-
-
-	// raytrace-sphere
-	h = iSphere( ro, rd, sc0 );
-	if( h>0.0 && h<tmin ) 
-	{ 
-		tmin = h; 
-        pos = ro + h*rd;
-		nor = normalize(pos-sc0.xyz); 
-		matid = 1;
-		occ = 0.5 + 0.5*nor.y;
-	}
-
-	h = iSphere( ro, rd, sc1 );
-	if( h>0.0 && h<tmin ) 
-	{ 
-		tmin = h; 
-        pos = ro + tmin*rd;
-		nor = normalize(pos-sc1.xyz); 
-		matid = 2;
-		occ = 0.5 + 0.5*nor.y;
-	}
-
-	h = iSphere( ro, rd, sc2 );
-	if( h>0.0 && h<tmin ) 
-	{ 
-		tmin = h; 
-        pos = ro + tmin*rd;
-		nor = normalize(pos-sc2.xyz); 
-		matid = 3;
-		occ = 0.5 + 0.5*nor.y;
-	}
-
-	h = iSphere( ro, rd, sc3 );
-	if( h>0.0 && h<tmin ) 
-	{ 
-		tmin = h; 
-        pos = ro + tmin*rd;
-		nor = normalize(pos-sc3.xyz); 
-		matid = 4;
-		occ = 0.5 + 0.5*nor.y;
-	}
-
-	return tmin;	
-}
-
-vec2 texCoords( in vec3 pos, int mid )
-{
-    vec2 matuv;
-    
-    if( mid==0 )
+ 
+    vec3 qvec = cross(tvec, v0v1); 
+    v = dot(dir, qvec) * invDet; 
+    if (v < 0 || u + v > 1)
     {
-        matuv = pos.xz;
+        return false;
     }
-    else if( mid==1 )
-    {
-        vec3 q = normalize( pos - sc0.xyz );
-        matuv = vec2( atan(q.x,q.z), acos(q.y ) )*sc0.w;
-    }
-    else if( mid==2 )
-    {
-        vec3 q = normalize( pos - sc1.xyz );
-        matuv = vec2( atan(q.x,q.z), acos(q.y ) )*sc1.w;
-    }
-    else if( mid==3 )
-    {
-        vec3 q = normalize( pos - sc2.xyz );
-        matuv = vec2( atan(q.x,q.z), acos(q.y ) )*sc2.w;
-    }
-    else if( mid==4 )
-    {
-        vec3 q = normalize( pos - sc3.xyz );
-        matuv = vec2( atan(q.x,q.z), acos(q.y ) )*sc3.w;
-    }
-
-	return 200.0*matuv;
-}
-
-
-void calcCamera( out vec3 ro, out vec3 ta )
-{
-	float an = 0.1*sin(0.1*uTime
-   );
-	ro = vec3( 5.0*cos(an), 0.5, 5.0*sin(an) );
-    ta = vec3( 0.0, 1.0, 0.0 );
-}
-
-vec3 doLighting( in vec3 pos, in vec3 nor, in float occ, in vec3 rd )
-{
-    float sh = min( min( min( softShadowSphere( pos, vec3(0.57703), sc0 ),
-				              softShadowSphere( pos, vec3(0.57703), sc1 )),
-				              softShadowSphere( pos, vec3(0.57703), sc2 )),
-                              softShadowSphere( pos, vec3(0.57703), sc3 ));
-	float dif = clamp(dot(nor,vec3(0.57703)),0.0,1.0);
-	float bac = clamp(0.5+0.5*dot(nor,vec3(-0.707,0.0,-0.707)),0.0,1.0);
-    vec3 lin  = dif*vec3(1.50,1.40,1.30)*sh;
-	     lin += occ*vec3(0.15,0.20,0.30);
-	     lin += bac*vec3(0.10,0.10,0.10)*(0.2+0.8*occ);
-
-    return lin;
-}
-
-//===============================================================================================
-//===============================================================================================
-// render
-//===============================================================================================
-//===============================================================================================
+ 
+    t = dot(v0v2, qvec) * invDet; 
+ 
+    return true; 
+#else 
+    // compute plane's normal
+    vec3 v0v1 = v1 - v0; 
+    vec3 v0v2 = v2 - v0; 
+    // no need to normalize
+    vec3 N = cross(v0v1, v0v2);  //N 
+    float denom = dot(N, N); 
+ 
+    // Step 1: finding P
+ 
+    // check if ray and plane are parallel ?
+    float NdotRayDirection = dot(N, dir); 
+ 
+    if (abs(NdotRayDirection) < kEpsilon)  //almost 0 
+        return false;  //they are parallel so they don't intersect ! 
+ 
+    // compute d parameter using equation 2
+    float d = -dot(N,v0); 
+ 
+    // compute t (equation 3)
+    t = -(dot(N, orig) + d) / NdotRayDirection; 
+ 
+    // check if the triangle is in behind the ray
+    if (t < 0) return false;  //the triangle is behind 
+ 
+    // compute the intersection point using equation 1
+    vec3 P = orig + t * dir; 
+ 
+    // Step 2: inside-outside test
+    vec3 C;  //vector perpendicular to triangle's plane 
+ 
+    // edge 0
+    vec3 edge0 = v1 - v0; 
+    vec3 vp0 = P - v0; 
+    C = cross(edge0, vp0); 
+    if (dot(N, C) < 0) return false;  //P is on the right side 
+ 
+    // edge 1
+    vec3 edge1 = v2 - v1; 
+    vec3 vp1 = P - v1; 
+    C = cross(edge1, vp1); 
+    if ((u = dot(N, C)) < 0)  return false;  //P is on the right side 
+ 
+    // edge 2
+    vec3 edge2 = v0 - v2; 
+    vec3 vp2 = P - v2; 
+    C = cross(edge2, vp2); 
+    if ((v = dot(N, C)) < 0) return false;  //P is on the right side; 
+ 
+    u /= denom; 
+    v /= denom; 
+ 
+    return true;  //this ray hits the triangle 
+#endif 
+} 
+ 
 
 vec3 rayTraceSubPixel(vec2 fragCoord) {
     Ray ray;
@@ -516,67 +384,36 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
     //return ray.direction;
 	//getLookignGlassRay( fragCoord + vec2(1.0/3.0,0.0), ddx_ro, ddx_rd );
 	//getLookignGlassRay( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
-    #if 0
-    for(uint i = 0; i < objects.length(); i++)
+    
+    vec3 col;
+    for(uint i = 0; i < indices.length(); i+=3)
     {
-        vec3 outHit, outNorm;
-        float outT;
-        bool hit = getRayObjectIntersection(objects[i], ray, outHit, outNorm, outT);
-        if(hit)
+        vec3[3] triangle;
+        for(uint vertInTri = 0; vertInTri < 3; vertInTri++)
         {
-            return vec3(1)*max(dot(outNorm, lights[0].direction), 0.0);
+            // Pull vertices and cosntruct a triangle
+            triangle[vertInTri] = vertices[indices[i + vertInTri]];
         }
-        else
-        {
+        float outT, outU, outV;
+        if(rayTriangleIntersect(ray.origin, ray.direction,
+            triangle[0],
+            triangle[1],
+            triangle[2],
+            outT, outU, outV))
+         {
+            return vec3(1);
+         }
+         else
+         {
+            vec3 outPos, outNorm;
+            if(getRayBoxIntersection(AnalyticalObject(vec3(0,-1,0), 1, vec3(100,0.1,100),0),ray, outPos, outNorm, outT))
+            {
+                return outNorm * 0.5 + 0.5;
+            }
             return vec3(0);
-        }
-    }
-		#endif
-    ray.direction = vec3(-ray.direction.z, ray.direction.y, ray.direction.x);
-    // trace
-	vec3 pos, nor;
-	float occ;
-    int mid;
-    float t = intersect( ray.origin, ray.direction, pos, nor, occ, mid );
-
-	vec3 col = vec3(0.9);
-	if( mid!=-1 )
-	{
-		// -----------------------------------------------------------------------
-        // compute ray differentials by intersecting the tangent plane to the  
-        // surface.		
-		// -----------------------------------------------------------------------
-
-		// computer ray differentials
-		//vec3 ddx_pos = ddx_ro - ddx_rd*dot(ddx_ro-pos,nor)/dot(ddx_rd,nor);
-		//vec3 ddy_pos = ddy_ro - ddy_rd*dot(ddy_ro-pos,nor)/dot(ddy_rd,nor);
-
-		// calc texture sampling footprint		
-		vec2     uv = texCoords(     pos, mid );
-       
-		// shading		
-		vec3 mate = vec3(0.0);
-        #if 0
-	    bool lr = fragCoord.x < uWindowSize.x/2.0;
-        if( lr ) mate = vec3(1.0)*xorTexture( uv );
-        else     mate = vec3(1.0)*xorTextureGradBox( uv, ddx_uv, ddy_uv );
-        #else
-        //mate = vec3(1.0)*xorTexture( uv );
-        //mate = vec3(1.0)*xorTextureGradBox( uv, ddx_uv, ddy_uv );
-        mate = vec3(1.0)*xorTextureGradBox( uv, dFdx(uv), dFdy(uv));
-        #endif
-        mate = pow( mate, vec3(1.5) );
+         }
         
-        // lighting	
-		vec3 lin = doLighting( pos, nor, occ, ray.direction );
-
-        // combine lighting with material		
-		col = mate * lin;
-		
-        // fog		
-        col = mix( col, vec3(0.9), 1.0-exp( -0.00001*t*t ) );
-	}
-	
+    }
     // gamma correction	
 	col = pow( col, vec3(0.4545) );
 

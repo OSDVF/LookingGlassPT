@@ -3,6 +3,7 @@
 #include "Settings.h"
 #include <imgui.h>
 #include <array>
+#include <glm/gtc/type_ptr.hpp>
 
 // This window is 'lazy' or power-saving, so it doesn't have a draw() method
 template <size_t count>
@@ -32,6 +33,9 @@ public:
 		bool cameraEdited = ImGui::SliderFloat("FOV", &ProjectSettings::fov, 30.f, 100.f);
 		cameraEdited = ImGui::SliderFloat("Near Plane", &ProjectSettings::nearPlane, 0.01f, 1) || cameraEdited;
 		cameraEdited = ImGui::SliderFloat("Far Plane", &ProjectSettings::farPlane, ProjectSettings::nearPlane, 1000) || cameraEdited;
+		ImGui::SliderFloat("Sensitivity", &ProjectSettings::person.Camera.Sensitivity, 0.01, 1);
+		ImGui::InputFloat3("P", glm::value_ptr(ProjectSettings::person.Camera._position));
+		ImGui::InputFloat3("R", glm::value_ptr(ProjectSettings::person.Camera._rotation));
 		if (cameraEdited)
 		{
 			ProjectSettings::person.Camera.SetProjectionMatrixPerspective(

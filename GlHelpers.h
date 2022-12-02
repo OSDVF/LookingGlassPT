@@ -1,6 +1,6 @@
 #pragma once
 #include <gl/glew.h>
-#define GLSL_VERSION 420
+#define GLSL_VERSION 430
 
 namespace GlHelpers {
 	void GLAPIENTRY

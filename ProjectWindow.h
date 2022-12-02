@@ -5,6 +5,7 @@
 #include <fstream>
 #include <sstream>
 #include <array>
+#include <vector>
 #include <string>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -35,6 +36,17 @@ public:
 	GLuint fullScreenVAO;
 	GLuint fullScreenVertexBuffer;
 	GLuint uCalibrationHandle;
+	GLuint vertexBufferHandle;
+	GLuint indexBufferHandle;
+
+	std::vector<glm::vec3> vertices = {
+		glm::vec3(0.5, 1, 1),
+		{1, 0, 1},
+		{0, 0, 1}
+	};
+	std::vector<unsigned int> indices = {
+		0, 1, 2
+	};
 
 	ProjectWindow(const char* name, float x, float y, float w, float h, bool forceFlat = false)
 		: AppWindow(name, x, y, w, h)
@@ -67,14 +79,14 @@ public:
 		glCreateVertexArrays(1, &fullScreenVAO);
 		// Assign to fullScreenVertexBuffer
 		glCreateBuffers(1, &fullScreenVertexBuffer);
-		std::array<glm::vec2, 4> vertices = {
+		std::array<glm::vec2, 4> screenQuadVertices = {
 			glm::vec2{-1.0f,-1.f},
 			{1.f,-1.f},
 			{-1.f,1.f},
 			{1.f,1.f}
 		};
 		// Transfer data to fullScreenVertexBuffer
-		glNamedBufferData(fullScreenVertexBuffer, vertices.size() * sizeof(glm::vec2), vertices.data(), GL_STATIC_DRAW);
+		glNamedBufferData(fullScreenVertexBuffer, screenQuadVertices.size() * sizeof(glm::vec2), screenQuadVertices.data(), GL_STATIC_DRAW);
 		GlHelpers::setVertexAttrib(fullScreenVAO, 0, 2, GL_FLOAT, fullScreenVertexBuffer, 0, sizeof(glm::vec2));
 
 		GLuint calibrationBlockI = glGetUniformBlockIndex(program, "Calibration");
@@ -91,6 +103,16 @@ public:
 		glBindBuffer(GL_UNIFORM_BUFFER, uCalibrationHandle);
 		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_DRAW);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, uCalibrationHandle);//For explanation: https://stackoverflow.com/questions/54955186/difference-between-glbindbuffer-and-glbindbufferbase
+
+		glGenBuffers(1, &vertexBufferHandle);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBufferHandle);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertexBufferHandle);
+
+		glGenBuffers(1, &indexBufferHandle);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBufferHandle);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, indexBufferHandle);
 
 		bindUniforms();
 		glBindVertexArray(fullScreenVAO);
@@ -177,6 +199,7 @@ public:
 		}
 		if (ProjectSettings::recompileFShaders)
 		{
+			recompileFShaders = false;
 			recompileFragmentSh();
 			GlHelpers::linkProgram(program);
 			bindUniforms();
