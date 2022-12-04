@@ -13,6 +13,7 @@
 #include "GlHelpers.h"
 #include "Helpers.h"
 #include "Settings.h"
+#include "SceneObjects.h"
 
 struct {
 	GLint uTime;
@@ -36,8 +37,13 @@ public:
 	GLuint fullScreenVAO;
 	GLuint fullScreenVertexBuffer;
 	GLuint uCalibrationHandle;
-	GLuint vertexBufferHandle;
-	GLuint indexBufferHandle;
+	struct {
+		GLuint vertex;
+		GLuint index;
+		GLuint objects;
+		GLuint material;
+		GLuint textures;
+	} bufferHandles;
 
 	std::vector<glm::vec3> vertices = {
 		glm::vec3(0.5, 1, 1),
@@ -47,6 +53,24 @@ public:
 	std::vector<unsigned int> indices = {
 		0, 1, 2
 	};
+
+	anyVector objects = {
+		SceneObject<1>{
+			0, 0, 1, {3}
+		}
+	};
+
+	anyVector materials = {
+		Material<color, color, color, color, color>{
+			{1.f,1.f,1.f},
+			{1.f,1.f,1.f},
+			{1.f,1.f,1.f},
+			{1.f,1.f,1.f},
+			{1.f,1.f,1.f}
+	}
+	};
+
+	std::vector<GLuint64> textures;
 
 	ProjectWindow(const char* name, float x, float y, float w, float h, bool forceFlat = false)
 		: AppWindow(name, x, y, w, h)
@@ -89,7 +113,7 @@ public:
 		glNamedBufferData(fullScreenVertexBuffer, screenQuadVertices.size() * sizeof(glm::vec2), screenQuadVertices.data(), GL_STATIC_DRAW);
 		GlHelpers::setVertexAttrib(fullScreenVAO, 0, 2, GL_FLOAT, fullScreenVertexBuffer, 0, sizeof(glm::vec2));
 
-		GLuint calibrationBlockI = glGetUniformBlockIndex(program, "Calibration");
+		GLuint calibrationBlockI = glGetUniformBlockIndex(program, "CalibrationBuffer");
 		GLint blockSize;
 		glGetActiveUniformBlockiv(program, calibrationBlockI, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
 
@@ -104,15 +128,23 @@ public:
 		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_DRAW);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, uCalibrationHandle);//For explanation: https://stackoverflow.com/questions/54955186/difference-between-glbindbuffer-and-glbindbufferbase
 
-		glGenBuffers(1, &vertexBufferHandle);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBufferHandle);
+		glGenBuffers(1, &bufferHandles.vertex);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.vertex);
 		glBufferData(GL_SHADER_STORAGE_BUFFER, vertices.size() * sizeof(glm::vec3), vertices.data(), GL_STATIC_DRAW);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertexBufferHandle);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, bufferHandles.vertex);
 
-		glGenBuffers(1, &indexBufferHandle);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBufferHandle);
+		glGenBuffers(1, &bufferHandles.index);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.index);
 		glBufferData(GL_SHADER_STORAGE_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, indexBufferHandle);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, bufferHandles.index);
+
+		bindDynamicBuffer(bufferHandles.objects, 3, objects);
+		bindDynamicBuffer(bufferHandles.material, 4, materials);
+
+		glGenBuffers(1, &bufferHandles.textures);
+		glBindBuffer(GL_UNIFORM_BUFFER, bufferHandles.textures);
+		glBufferData(GL_UNIFORM_BUFFER, textures.size() * sizeof(GLuint64), textures.data(), GL_STATIC_DRAW);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 5, bufferHandles.textures);
 
 		bindUniforms();
 		glBindVertexArray(fullScreenVAO);
@@ -123,9 +155,19 @@ public:
 		glUniform2f(uniforms.uWindowPos, windowPosX, windowPosY);
 		glUniform2f(uniforms.uMouse, 0.5f, 0.5f);
 
+		std::cout << objects.debug().rdbuf();
+		std::cout << materials.debug().rdbuf();
+
 		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
 		person.Camera.SetCenter(glm::vec2(windowWidth / 2, windowHeight / 2));
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	}
+	void bindDynamicBuffer(GLuint& bufferHandle, GLuint index, anyVector& buffer)
+	{
+		glGenBuffers(1, &bufferHandle);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandle);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, buffer.totalSize, buffer.buffer.view().data(), GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, index, bufferHandle);
 	}
 	/**
 	* Sets calibration and ScreenType

@@ -1,4 +1,6 @@
 //!#version 430
+#extension GL_ARB_bindless_texture: enable
+
 #ifdef FLAT_SCREEN
 #define getRay getFlatScreenRay
 #else
@@ -8,7 +10,7 @@ out vec4 OutColor;
 in vec2 vNDCpos;
 
 layout(shared)
-uniform Calibration {
+uniform CalibrationBuffer {
     float pitch;
     float tilt;
     float center;
@@ -22,13 +24,55 @@ uniform vec2 uMouse = vec2(0.5,0.5);
 uniform float uViewCone = radians(20); // 40 deg in rad
 uniform float uFocusDistance = 10;
 
-layout(std430, binding=1) buffer VertexBuffer {
-    vec3[] vertices;
+layout(std430, binding = 1) buffer VertexBuffer {
+    vec3[] dynamicVertices;
 };
 
-layout(std430, binding=2) buffer IndexBuffer {
-    uint[] indices;
+layout(std430, binding = 2) buffer IndexBuffer {
+    uint[] dynamicIndices;
 };
+
+// Layout is like this:
+// uint material number (if higher than 2 147 483 648, the material is treated as color-only)
+// index of first index in index buffer
+// num of vertex attrs
+// first attr width
+// second attr width...
+
+layout(std430, binding = 3) buffer ObjectBuffer {
+    uint[] objectDefinitions;
+};
+
+// Layout is one of these:
+//struct Material {
+//    uint textureValuesMask;
+//    vec3 albedo;
+//    vec3 roughness;
+//    vec3 metallness;
+//    vec3 emmision;
+//    vec3 occlussion;
+//}; // 60 bytes
+//
+//struct TextureMaterial {
+//    uint textureValuesMask;
+//    uint64 albedo;
+//    uint64 roughness;
+//    uint64 metallness;
+//    uint64 emmision;
+//    uint64 occlussion;
+//}; // 40 bytes
+// Or a combination according to the bit mask
+
+// The layout is actually dynamically constructed
+layout(std430, binding = 4) buffer MaterialBuffer {
+    uint[] materials;
+};
+
+layout(shared, bindless_sampler)
+uniform SamplersBuffer
+{
+    sampler2D arr[];
+} uSamplers;
 
 //TODO vyzkoušet jiné typy projekce, které budou generovat ménì artefaktù
 
@@ -386,13 +430,13 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 	//getLookignGlassRay( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
     
     vec3 col;
-    for(uint i = 0; i < indices.length(); i+=3)
+    for(uint i = 0; i < dynamicIndices.length(); i+=3)
     {
         vec3[3] triangle;
         for(uint vertInTri = 0; vertInTri < 3; vertInTri++)
         {
-            // Pull vertices and cosntruct a triangle
-            triangle[vertInTri] = vertices[indices[i + vertInTri]];
+            // Pull dynamicVertices and cosntruct a triangle
+            triangle[vertInTri] = dynamicVertices[dynamicIndices[i + vertInTri]];
         }
         float outT, outU, outV;
         if(rayTriangleIntersect(ray.origin, ray.direction,
