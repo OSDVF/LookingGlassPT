@@ -79,6 +79,10 @@ int main(int argc, const char** argv)
 	{
 		window->setupGL();
 	}
+	if (!checkExtensions())
+	{
+		return;
+	}
 	while (!exit)
 	{
 		for (int i = 0; i < windows.size(); i++)
@@ -224,4 +228,23 @@ void destroyWindow(AppWindow* window)
 	SDL_DestroyWindow(window->window);
 }
 
+bool checkExtensions()
+{
+	if (!GLEW_ARB_bindless_texture)
+	{
+		std::cerr << "Bindless textures support is required.\n";
+		std::cout << "Available extensions:\n";
+		GLint n = 0;
+		glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+
+		for (GLint i = 0; i < n; i++)
+		{
+			const char* extension =
+				(const char*)glGetStringi(GL_EXTENSIONS, i);
+			std::cout << std::format("{}: {}\n", i, extension) << std::endl;
+		}
+		return false;
+	}
+	return true;
+}
 

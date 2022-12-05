@@ -8,6 +8,7 @@
     "imgui",
     "libusb",
     "nlohmann-json",
-    "tiny-process-library"
+    "tiny-process-library",
+    "assimp"
   ]
 }

@@ -25,19 +25,21 @@ uniform float uViewCone = radians(20); // 40 deg in rad
 uniform float uFocusDistance = 10;
 
 layout(std430, binding = 1) buffer VertexBuffer {
-    vec3[] dynamicVertices;
+    float[] dynamicVertexAttrs;
 };
 
 layout(std430, binding = 2) buffer IndexBuffer {
-    uint[] dynamicIndices;
+    uint[] dynamicIndices;//Points to attribute index, not vertex index
 };
 
 // Layout is like this:
 // uint material number (if higher than 2 147 483 648, the material is treated as color-only)
-// index of first index in index buffer
-// num of vertex attrs
-// first attr width
-// second attr width...
+// uint index of first index in index buffer
+// uint number of indices
+// uint num of vertex attrs
+// uint total attrs size
+// uint 1st attr width
+// uint 2nd attr width...
 
 layout(std430, binding = 3) buffer ObjectBuffer {
     uint[] objectDefinitions;
@@ -67,12 +69,6 @@ layout(std430, binding = 3) buffer ObjectBuffer {
 layout(std430, binding = 4) buffer MaterialBuffer {
     uint[] materials;
 };
-
-layout(shared, bindless_sampler)
-uniform SamplersBuffer
-{
-    sampler2D arr[];
-} uSamplers;
 
 //TODO vyzkoušet jiné typy projekce, které budou generovat ménì artefaktù
 
@@ -430,34 +426,75 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 	//getLookignGlassRay( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
     
     vec3 col;
-    for(uint i = 0; i < dynamicIndices.length(); i+=3)
+    for (uint o = 0; o < objectDefinitions.length();)
     {
-        vec3[3] triangle;
-        for(uint vertInTri = 0; vertInTri < 3; vertInTri++)
+        uint matIndex = objectDefinitions[o];
+        uint vboPosition = objectDefinitions[o+=1];
+        uint firstIndexIndex = objectDefinitions[o+=1];
+        uint indicesCount = objectDefinitions[o+=1];
+        uint vertAttrNum = objectDefinitions[o+=1];
+        uint totalAttrSize = objectDefinitions[o+=1];
+
+        for(uint i = firstIndexIndex; i < firstIndexIndex + indicesCount; i+=3)
         {
-            // Pull dynamicVertices and cosntruct a triangle
-            triangle[vertInTri] = dynamicVertices[dynamicIndices[i + vertInTri]];
-        }
-        float outT, outU, outV;
-        if(rayTriangleIntersect(ray.origin, ray.direction,
-            triangle[0],
-            triangle[1],
-            triangle[2],
-            outT, outU, outV))
-         {
-            return vec3(1);
-         }
-         else
-         {
-            vec3 outPos, outNorm;
-            if(getRayBoxIntersection(AnalyticalObject(vec3(0,-1,0), 1, vec3(100,0.1,100),0),ray, outPos, outNorm, outT))
+            vec3[3] triangle;//The first vertex attribute is always the position
+            for(uint vertInTri = 0; vertInTri < 3; vertInTri++)
             {
-                return outNorm * 0.5 + 0.5;
+                // Pull vertices and construct a triangle
+                triangle[vertInTri] = vec3(
+                    dynamicVertexAttrs[vboPosition + dynamicIndices[i + vertInTri] * totalAttrSize],
+                    dynamicVertexAttrs[vboPosition + dynamicIndices[i + vertInTri] * totalAttrSize + 1],
+                    dynamicVertexAttrs[vboPosition + dynamicIndices[i + vertInTri] * totalAttrSize + 2]
+                );
             }
-            return vec3(0);
-         }
+            float outT, outU, outV;
+            if(rayTriangleIntersect(ray.origin, ray.direction,
+                triangle[0],
+                triangle[1],
+                triangle[2],
+                outT, outU, outV))
+             {
+                // Interpolate other triangle attributes by barycentric coordinates
+                uint currentAttrOffset = 3;// skip first three values (vertex pos)
+                for(uint currentAttr = 1; currentAttr < vertAttrNum; currentAttr++)
+                {
+                    uint currentAttrSize = objectDefinitions[o+=1];
+                    for(uint attrPart = 0; attrPart < currentAttrSize; attrPart++)
+                    {
+                        float interpolatedAttr = 
+                            dynamicVertexAttrs[
+                                vboPosition
+                                + dynamicIndices[i] * totalAttrSize
+                                + currentAttrOffset + attrPart
+                            ] * outU +
+                            dynamicVertexAttrs[
+                                vboPosition
+                                + dynamicIndices[i + 1] * totalAttrSize
+                                + currentAttrOffset + attrPart
+                            ] * outV +
+                            dynamicVertexAttrs[
+                                vboPosition
+                                + dynamicIndices[i + 2] * totalAttrSize
+                                + currentAttrOffset + attrPart
+                            ] * (1 - outU - outV);
+                        col[attrPart] = interpolatedAttr;
+                    }
+                    
+                }
+             }
+             else
+             {
+                vec3 outPos, outNorm;
+                if(getRayBoxIntersection(AnalyticalObject(vec3(0,-1,0), 1, vec3(100,0.1,100),0),ray, outPos, outNorm, outT))
+                {
+                    return outNorm * 0.5 + 0.5;
+                }
+                return vec3(0);
+             }
         
+        }
     }
+
     // gamma correction	
 	col = pow( col, vec3(0.4545) );
 

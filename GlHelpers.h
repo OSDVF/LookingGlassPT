@@ -12,7 +12,7 @@ namespace GlHelpers {
 			const GLchar* message,
 			const void* userParam)
 	{
-		fprintf(stderr, 
+		fprintf(stderr,
 			"%s %x (severity 0x%x): %s\n",
 			(type == GL_DEBUG_TYPE_ERROR ? "Error" : "Message"),
 			type,
@@ -62,6 +62,7 @@ namespace GlHelpers {
 	template<GLenum SHADER_TYPE>
 	bool compileShader(std::string filename, GLuint& shader, std::initializer_list<std::string> defines)
 	{
+		std::cout << "Compiling shader " << filename << std::endl;
 		shader = glCreateShader(SHADER_TYPE);
 		std::ifstream t;
 		t.open(filename);

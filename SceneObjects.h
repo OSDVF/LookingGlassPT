@@ -1,8 +1,17 @@
 #pragma once
 #include <cstdint>
+#include <bitset>
 #include <type_traits>
 #include <glm/glm.hpp>
 #include <sstream>
+
+inline std::string debugArray(const char* data, size_t len) {
+	std::stringstream out;
+	for (size_t i = 0; i < len; ++i)
+		out << std::uppercase << std::hex << std::setfill('0') << std::setw(2) << (((int)data[i]) & 0xFF) << " ";
+	out << std::endl;
+	return out.str();
+}
 
 struct color {
 	float r, g, b;
@@ -14,14 +23,6 @@ std::ostream& operator<<(std::ostream& os, const color& c)
 }
 typedef uint64_t textureHandle;
 
-class Printable {
-public:
-	virtual std::stringstream to_print() {
-		std::stringstream s;
-		return s;
-	};
-};
-
 template <
 	typename albedoT,
 	typename roughnessT,
@@ -29,24 +30,24 @@ template <
 	typename emmisionT,
 	typename occlussionT
 >
-struct Material : public Printable {
+struct Material {
+	const uint32_t textureTypesMask =
+		(
+			((std::is_same<albedoT, color>::value ? 0 : 1) << 0)
+			|
+			((std::is_same<roughnessT, color>::value ? 0 : 1) << 1)
+			|
+			((std::is_same<metallnessT, color>::value ? 0 : 1) << 2)
+			|
+			((std::is_same<emmisionT, color>::value ? 0 : 1) << 3)
+			|
+			((std::is_same<occlussionT, color>::value ? 0 : 1) << 4)
+			);
 	albedoT albedo;
 	roughnessT roughness;
 	metallnessT metallness;
 	emmisionT emmision;
 	occlussionT occlussion;
-	const uint32_t textureTypesMask =
-		(
-			((std::is_same<albedoT, color>::value ? 0 : 1) << 0)
-			&&
-			((std::is_same<roughnessT, color>::value ? 0 : 1) << 1)
-			&&
-			((std::is_same<metallnessT, color>::value ? 0 : 1) << 2)
-			&&
-			((std::is_same<emmisionT, color>::value ? 0 : 1) << 3)
-			&&
-			((std::is_same<occlussionT, color>::value ? 0 : 1) << 4)
-			);
 	Material(albedoT albedo,
 		roughnessT roughness,
 		metallnessT metallness,
@@ -62,44 +63,65 @@ struct Material : public Printable {
 	}
 
 
-	std::stringstream to_print() override {
+	std::stringstream to_print() {
 		std::stringstream s;
 		s << "A: " << albedo << std::endl;
-		s << "R: " << albedo << std::endl;
-		s << "M: " << albedo << std::endl;
-		s << "E: " << albedo << std::endl;
-		s << "O: " << albedo << std::endl;
+		s << "R: " << roughness << std::endl;
+		s << "M: " << metallness << std::endl;
+		s << "E: " << emmision << std::endl;
+		s << "O: " << occlussion << std::endl;
+		s << "T: " << std::bitset<5>(textureTypesMask) << std::endl;
 		return s;
 	}
 };
+template<uint32_t... Items>
+struct StaticLinkedList;
 
-template <uint32_t AttrCount>
-struct SceneObject : public Printable {
+template<uint32_t val>
+struct StaticLinkedList<val> {
+	uint32_t value = val;
+};
+
+template<uint32_t val, uint32_t... Rest>
+struct StaticLinkedList<val, Rest...> {
+	uint32_t value = val;
+	StaticLinkedList<Rest...> next;
+};
+
+template <uint32_t... VertexAttrs>
+struct SceneObject {
+	using AttrList = StaticLinkedList<VertexAttrs...>;
 	uint32_t materialNumber;
+	uint32_t vboPosition;
 	uint32_t modelBaseIndex;
-	uint32_t vertexAttributeCount = AttrCount;
-	uint32_t attributeSizes[AttrCount];
+	uint32_t indicesCount;
 
-	SceneObject(std::initializer_list<uint32_t> list)
+	uint32_t vertexAttributeCount;
+	uint32_t totalVertexSize = 0;
+	AttrList attributeSizes;
+
+	SceneObject(uint32_t materialNumber,
+		uint32_t vboPosition,
+		uint32_t modelBaseIndex,
+		uint32_t indicesCount)
+		:
+		materialNumber(materialNumber),
+		vboPosition(vboPosition),
+		modelBaseIndex(modelBaseIndex),
+		indicesCount(indicesCount),
+		vertexAttributeCount(sizeof...(VertexAttrs)),
+		totalVertexSize((VertexAttrs + ...))
 	{
-		auto pointer = list.begin();
-		materialNumber = pointer[0];
-		modelBaseIndex = pointer[1];
-		for (std::size_t i = 0; i < list.size() - 2; i++)
-		{
-			attributeSizes[i + 2] = pointer[i];
-		}
 	}
 
 	std::stringstream to_print() {
 		std::stringstream s;
 		s << "MN: " << materialNumber << std::endl;
 		s << "I: " << modelBaseIndex << std::endl;
+		s << "IC: " << indicesCount << std::endl;
 		s << "A: " << vertexAttributeCount << std::endl;
-		for (auto att : attributeSizes)
-		{
-			s << att << " ";
-		}
+
+		((s << VertexAttrs << ' '), ...);
 		s << std::endl;
 		return s;
 	}
@@ -170,10 +192,12 @@ public:
 		for (auto& type : types)
 		{
 			s << i << ": " << type.type.name() << std::endl;
-			s << ((Printable*)buffer.view().substr(offset, type.size).data())->to_print().rdbuf();
+			s << debugArray(buffer.view().data(), buffer.view().size()) << std::endl;
+			//s << ((Printable*)buffer.view().substr(offset, type.size).data())->to_print().rdbuf();
 			s << "(" << type.size << " bytes)" << std::endl;
 			i++;
 		}
+		s << std::endl;
 		return s;
 	}
 };

@@ -46,17 +46,23 @@ public:
 	} bufferHandles;
 
 	std::vector<glm::vec3> vertices = {
-		glm::vec3(0.5, 1, 1),
-		{1, 0, 1},
-		{0, 0, 1}
+		glm::vec3(0.5, 1, 1),//pos
+		{1,0,0},//color
+		{1, 0, 1},//pos
+		{0,1,0},//color
+		{0, 0, 1},//pos
+		{0,0,1}//color
 	};
 	std::vector<unsigned int> indices = {
 		0, 1, 2
 	};
 
 	anyVector objects = {
-		SceneObject<1>{
-			0, 0, 1, {3}
+		SceneObject<3, 3>{//attribute sizes
+			0,//material
+			0,//VBO position in global vertex buffer
+			0,//first index index
+			3,//total indices
 		}
 	};
 
@@ -69,6 +75,12 @@ public:
 			{1.f,1.f,1.f}
 	}
 	};
+
+	/*anyVector materials{
+		Material<textureHandle, textureHandle, textureHandle, textureHandle, textureHandle>{
+			0,1,2,3,4
+	}
+	};*/
 
 	std::vector<GLuint64> textures;
 
@@ -140,11 +152,6 @@ public:
 
 		bindDynamicBuffer(bufferHandles.objects, 3, objects);
 		bindDynamicBuffer(bufferHandles.material, 4, materials);
-
-		glGenBuffers(1, &bufferHandles.textures);
-		glBindBuffer(GL_UNIFORM_BUFFER, bufferHandles.textures);
-		glBufferData(GL_UNIFORM_BUFFER, textures.size() * sizeof(GLuint64), textures.data(), GL_STATIC_DRAW);
-		glBindBufferBase(GL_UNIFORM_BUFFER, 5, bufferHandles.textures);
 
 		bindUniforms();
 		glBindVertexArray(fullScreenVAO);

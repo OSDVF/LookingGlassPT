@@ -44,6 +44,9 @@ set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
 find_package(tiny-process-library CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE tiny-process-library::tiny-process-library)
 
+find_package(assimp CONFIG REQUIRED)
+target_link_libraries(LookingGlassPT PRIVATE assimp::assimp)
+
 # 
 # Include node.js program in the compilation
 # depends on npm
