@@ -47,6 +47,12 @@ target_link_libraries(LookingGlassPT PRIVATE tiny-process-library::tiny-process-
 find_package(assimp CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE assimp::assimp)
 
+find_path(STB_INCLUDE_DIRS "stb_c_lexer.h" stb_image.h)
+target_include_directories(LookingGlassPT PRIVATE ${STB_INCLUDE_DIRS})
+
+find_package(unofficial-nativefiledialog CONFIG REQUIRED)
+target_link_libraries(LookingGlassPT PRIVATE unofficial::nativefiledialog::nfd)
+
 # 
 # Include node.js program in the compilation
 # depends on npm

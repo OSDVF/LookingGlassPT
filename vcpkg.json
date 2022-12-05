@@ -9,6 +9,8 @@
     "libusb",
     "nlohmann-json",
     "tiny-process-library",
-    "assimp"
+    "assimp",
+    "stb",
+    "nativefiledialog"
   ]
 }

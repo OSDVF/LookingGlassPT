@@ -10,7 +10,7 @@
       "cacheVariables": {
         "CMAKE_C_COMPILER": "cl.exe",
         "CMAKE_CXX_COMPILER": "cl.exe",
-        "CMAKE_TOOLCHAIN_FILE": "E:/Instal/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
       },
       "condition": {
         "type": "equals",
@@ -25,18 +25,6 @@
       "architecture": {
         "value": "x64",
         "strategy": "external"
-      }
-    },
-    {
-      "name": "x64-memory",
-      "displayName": "x64 Memory",
-      "inherits": "x64-debug",
-      "architecture": {
-        "value": "x64",
-        "strategy": "external"
-      },
-      "cacheVariables": {
-        "ASAN_ENABLED": "ON"
       }
     },
     {
