@@ -1,6 +1,5 @@
 #pragma once
-#include <iostream>
-#include <deque>
+#include "PrecompiledHeaders.hpp"
 #include <SDL.h>
 #include <imgui.h>
 #include "impl/imgui_impl_opengl3.h"
@@ -8,7 +7,6 @@
 #include "imgui_internal.h"
 #include <GL/glew.h>
 #include "Helpers.h"
-
 
 class AppWindow {
 public:
@@ -28,165 +26,37 @@ public:
 	bool destroyMe = false;
 	bool hidden = false;
 	// Runs on tha main thread
-	AppWindow(const char* name, float x, float y, float w, float h)
-	{
-		window = SDL_CreateWindow(name, x, y, w, h, flags);
-		windowWidth = w;
-		windowHeight = h;
-		windowPosX = x;
-		windowPosY = y;
-		windowID = SDL_GetWindowID(window);
-		pixelScale = Helpers::GetVirtualPixelScale(window);
-		assert(window);
-	}
+	AppWindow(const char* name, float x, float y, float w, float h);
 
 	// Runs on the render thread
-	virtual void setupGL()
-	{
-		glContext = SDL_GL_CreateContext(window);
-		SDL_GL_MakeCurrent(window, glContext);
-
-		glewExperimental = true;
-		auto initError = glewInit();
-		if (initError != GLEW_OK) {
-			std::cerr << "Failed to initialize GLEW" << std::endl;
-			std::cerr << glewGetErrorString(initError) << std::endl;
-		}
-
-		auto tempImCtx = ImGui::CreateContext();
-		ImGui::SetCurrentContext(tempImCtx);
-		io = ImGui::GetIO(); (void)io;
-		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-		ImGui::StyleColorsDark();
-
-		// Setup Platform/Renderer backends
-		ImGui_ImplSDL2_InitForOpenGL(window, glContext);
-		ImGui_ImplOpenGL3_Init("#version 420");
-
-		ImGui::GetStyle().ScaleAllSizes(pixelScale);
-		io.FontGlobalScale = pixelScale;
-		imGuiContext = tempImCtx;
-	}
+	virtual void setupGL();
 
 	// On render thread
-	virtual void resized()
-	{
-		glViewport(0, 0, windowWidth, windowHeight);
-	}
+	virtual void resized();
 
 	// On render thread
-	virtual void moved()
-	{
-	}
+	virtual void moved();
 
 	// On render thread
-	virtual void render()
-	{
-	}
+	virtual void render();
 
-	void setContext()
-	{
-		if (SDL_GL_MakeCurrent(window, glContext) < 0)
-		{
-			std::cerr << SDL_GetError() << std::endl;
-			SDL_ClearError();
-		}
-		ImGui::SetCurrentContext(imGuiContext);
-		ImGui_ImplSDL2_NewFrame();
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui::NewFrame();
-	}
+	void setContext();
 
-	void flushRender()
-	{
-		ImGui::Render();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		SDL_GL_SwapWindow(window);
-	}
+	void beginFrame();
+
+	void flushRender();
 
 	// Event handler on the rendering thread
-	virtual void renderOnEvent(std::deque<SDL_Event> events)
-	{
-		for (auto& event : events)
-		{
-			processImGuiEvent(event);
-		}
-	}
+	virtual void renderOnEvent(std::deque<SDL_Event> events);
 
-	void processImGuiEvent(SDL_Event& event)
-	{
-		switch (event.type)
-		{
-		case SDL_WINDOWEVENT:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			switch (event.window.event)
-			{
-			case SDL_WINDOWEVENT_RESIZED:
-				windowWidth = event.window.data1;
-				windowHeight = event.window.data2;
-				resized();
-				break;
-			case SDL_WINDOWEVENT_MOVED:
-				windowPosX = event.window.data1;
-				windowPosY = event.window.data2;
-				pixelScale = Helpers::GetVirtualPixelScale(window);
-				ImGui::GetStyle().ScaleAllSizes(pixelScale);
-				io.FontGlobalScale = pixelScale;
-				moved();
-				break;
-			}
-			break;
-		case SDL_MOUSEMOTION:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_MOUSEBUTTONDOWN:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_MOUSEBUTTONUP:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_MOUSEWHEEL:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_KEYUP:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		case SDL_KEYDOWN:
-			ImGui_ImplSDL2_ProcessEvent(&event);
-			break;
-		}
-	}
+	void processImGuiEvent(SDL_Event& event);
 
 	// Event handling on worker thread
 	virtual bool workOnEvent(SDL_Event event, float deltaTime) = 0;
 
-	void hide()
-	{
-		if (!hidden)
-		{
-			SDL_HideWindow(window);
-			hidden = true;
-		}
-	}
+	void hide();
 
-	void show()
-	{
-		if (hidden)
-		{
-			SDL_ShowWindow(window);
-			hidden = false;
-		}
-	}
+	void show();
 
-	~AppWindow()
-	{
-		ImGui::SetCurrentContext(imGuiContext);
-		// Cleanup
-		ImGui_ImplOpenGL3_Shutdown();
-		ImGui_ImplSDL2_Shutdown();
-		ImGui::DestroyContext(imGuiContext);
-
-		SDL_GL_DeleteContext(glContext);
-		SDL_DestroyWindow(window);
-	}
+	~AppWindow();
 };

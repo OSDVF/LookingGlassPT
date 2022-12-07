@@ -1,64 +1,17 @@
 #pragma once
-#include <gl/glew.h>
+#include "PrecompiledHeaders.hpp"
+
+#include <GL/glew.h>
+#include <assimp/vector3.h>
+#include <assimp/vector2.h>
+#include <assimp/color4.h>
 #define GLSL_VERSION 430
 
 namespace GlHelpers {
-	void GLAPIENTRY
-		MessageCallback(GLenum source,
-			GLenum type,
-			GLuint id,
-			GLenum severity,
-			GLsizei length,
-			const GLchar* message,
-			const void* userParam)
-	{
-		fprintf(stderr,
-			"%s %x (severity 0x%x): %s\n",
-			(type == GL_DEBUG_TYPE_ERROR ? "Error" : "Message"),
-			type,
-			severity, message
-		);
-	}
-
-	void initCallback()
-	{
-		glEnable(GL_DEBUG_OUTPUT);
-		glDebugMessageCallback(MessageCallback, 0);
-	}
-
-	void setVertexAttrib(
-		GLuint   vao,
-		GLuint   attrib,
-		GLint    size,
-		GLenum   type,
-		GLuint   buffer,
-		GLintptr offset,
-		GLsizei  stride) {
-		glVertexArrayAttribBinding(
-			vao,
-			attrib, //attrib index
-			attrib);//binding index
-
-		glEnableVertexArrayAttrib(
-			vao,
-			attrib); // attrib index
-
-		glVertexArrayAttribFormat(
-			vao,
-			attrib, //attrib index
-			size,
-			type,
-			GL_FALSE, //normalization
-			0);//relative offset
-
-		glVertexArrayVertexBuffer(
-			vao,
-			attrib, //binding index
-			buffer,
-			offset,
-			stride);
-	}
-
+	void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar* message, const void* userParam);
+	void initCallback();
+	void setVertexAttrib(GLuint vao, GLuint attrib, GLint size, GLenum type, GLuint buffer, GLintptr offset, GLsizei stride);
+	void linkProgram(GLuint program);
 	template<GLenum SHADER_TYPE>
 	bool compileShader(std::string filename, GLuint& shader, std::initializer_list<std::string> defines)
 	{
@@ -111,17 +64,12 @@ namespace GlHelpers {
 		}
 		return true;
 	}
-
-	void linkProgram(GLuint program)
+	glm::vec3 aiToGlm(aiVector3D vec);
+	glm::vec2 aiToGlm(aiVector2D vec);
+	glm::vec4 aiToGlm(aiColor4D vec);
+	template<typename O, typename I>
+	O structConvert(I in)
 	{
-		glLinkProgram(program);
-		int success;
-		glGetProgramiv(program, GL_LINK_STATUS, &success);
-		if (!success)
-		{
-			std::string infoLog(512, ' ');
-			glGetProgramInfoLog(success, 512, NULL, (GLchar*)infoLog.c_str());
-			std::cerr << "Shader link failed:\n" << infoLog << std::endl;
-		}
+		return O(in.x, in.y, in.z);
 	}
 };

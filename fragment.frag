@@ -1,15 +1,21 @@
 //!#version 430
 #extension GL_ARB_bindless_texture: enable
+//#extension GL_ARB_gpu_shader_int64 : enable
 
 #ifdef FLAT_SCREEN
 #define getRay getFlatScreenRay
 #else
 #define getRay getLookingGlassRay
 #endif
+
+#ifndef MAX_OBJECT_BUFFER
+#define MAX_OBJECT_BUFFER 256
+#endif
+
 out vec4 OutColor;
 in vec2 vNDCpos;
 
-layout(shared)
+layout(shared, binding = 0)
 uniform CalibrationBuffer {
     float pitch;
     float tilt;
@@ -17,20 +23,6 @@ uniform CalibrationBuffer {
     float subp;
     vec2 resolution;
 } uCalibration;
-uniform float uTime = 0;
-uniform vec2 uWindowSize = vec2(500,500);
-uniform vec2 uWindowPos;
-uniform vec2 uMouse = vec2(0.5,0.5);
-uniform float uViewCone = radians(20); // 40 deg in rad
-uniform float uFocusDistance = 10;
-
-layout(std430, binding = 1) buffer VertexBuffer {
-    float[] dynamicVertexAttrs;
-};
-
-layout(std430, binding = 2) buffer IndexBuffer {
-    uint[] dynamicIndices;//Points to attribute index, not vertex index
-};
 
 // Layout is like this:
 // uint material number (if higher than 2 147 483 648, the material is treated as color-only)
@@ -41,8 +33,33 @@ layout(std430, binding = 2) buffer IndexBuffer {
 // uint 1st attr width
 // uint 2nd attr width...
 
-layout(std430, binding = 3) buffer ObjectBuffer {
-    uint[] objectDefinitions;
+struct ObjectDefinition {
+    uint material;
+    uint vboStartIndex;
+    uint indexIndex;
+    uint triNumber;
+    uvec4 attrSizes;
+};
+
+layout(shared, binding = 1) uniform ObjectBuffer {
+    ObjectDefinition[MAX_OBJECT_BUFFER] objectDefinitions;
+};
+
+
+uniform uint uObjectCount = 0;
+uniform float uTime = 0;
+uniform vec2 uWindowSize = vec2(500,500);
+uniform vec2 uWindowPos;
+uniform vec2 uMouse = vec2(0.5,0.5);
+uniform float uViewCone = radians(20); // 40 deg in rad
+uniform float uFocusDistance = 10;
+
+layout(std430, binding = 2) readonly buffer VertexBuffer {
+    float[] dynamicVertexAttrs;
+};
+
+layout(std430, binding = 3) readonly buffer IndexBuffer {
+    uint[] dynamicIndices;//Points to attribute index, not vertex index
 };
 
 // Layout is one of these:
@@ -66,7 +83,7 @@ layout(std430, binding = 3) buffer ObjectBuffer {
 // Or a combination according to the bit mask
 
 // The layout is actually dynamically constructed
-layout(std430, binding = 4) buffer MaterialBuffer {
+layout(std430, binding = 4) readonly buffer MaterialBuffer {
     uint[] materials;
 };
 
@@ -74,6 +91,10 @@ layout(std430, binding = 4) buffer MaterialBuffer {
 
 uniform mat4 uView;
 uniform mat4 uProj;
+
+struct Triangle {
+    vec3 v0, edgeA, edgeB, n;
+};
 
 struct Ray {
     vec3 origin;
@@ -105,12 +126,28 @@ Light[1] lights = {
     Light(vec3(0, 1, 0))
 };
 
+//const float pos_infinity = uintBitsToFloat(0x7F800000);
+const float pos_infinity = 100000.0;
+const float neg_infinity = uintBitsToFloat(0xFF800000);
+struct Hit {
+    uint object;
+    uint triIndex;
+    float rayT;
+    vec2 barycentric;
+};
+
+struct HitTest {
+	float dist;
+    vec3 normal;
+	vec3 val;
+};
+
 int subpI;
 
 const int tile = 45;
 Ray generateChaRay(){
     vec2 texCoords = vNDCpos*.5f+.5f;
-
+    
 	float view = (texCoords.x + uCalibration.subp * subpI + texCoords.y * uCalibration.tilt) * uCalibration.pitch - uCalibration.center;
 	view = fract(view);
 	view = (1.0 - view);
@@ -315,7 +352,38 @@ bool getRayObjectIntersection(AnalyticalObject object, Ray ray, out vec3 hitPosi
     }
 }
 
-#define MOLLER_TRUMBORE
+bool intersectTriangle(in Ray r, in Triangle t, inout HitTest test) {
+    
+    vec3 pvec = cross(r.direction, t.edgeB);
+    float det = dot(t.edgeA, pvec);
+    if ((det) < 0.001) return false;
+    
+    float iDet = 1./det;
+    
+    vec3 tvec = r.origin - t.v0;
+    float u = dot(tvec, pvec) * iDet;
+    float inside = step(0.0, u) * (1.-step(1.0, u));
+    
+    vec3 qvec = cross(tvec, t.edgeA);
+    float v = dot(r.direction, qvec) * iDet;
+    inside *= step(0.0, v) * (1. - step(1., u+v));
+    if (inside == 0.0) return false;
+    
+    float d = dot(t.edgeB, qvec) * iDet;
+    
+    float f = step(0.0, -d);
+    d = d * (1.-f) + (f * pos_infinity);    
+    if (d > test.dist) { return false; }
+    
+    test.dist = d;
+    test.normal = t.n * sign(det);//((s.n0 * u) + (s.n1 * v) + (s.n2 * (1. - (u + v)))) * -sign(a);
+    //test.val = vec3(u, v, 1. - (u+v));
+    
+    return true;
+}
+
+
+//#define MOLLER_TRUMBORE
 #define CULLING
 const float kEpsilon = 1e-8; 
 bool rayTriangleIntersect( 
@@ -416,7 +484,160 @@ bool rayTriangleIntersect(
     return true;  //this ray hits the triangle 
 #endif 
 } 
+
+vec3 baldwinRayTriIntersect( in vec3 ro, in vec3 rd,
+                             in vec3 A, in vec3 B, in vec3 C) {
+    
+    vec3 E1 = B - A;
+    vec3 E2 = C - A;
+    
+    vec3 n = cross(E1, E2);
+    
+    vec3 an = abs(n);
+  
+    // Vectors for each row of the matrix
+    vec4 tmat1, tmat2, tmat3;
+    float num = -dot(A, n);
+    
+    // Ideally, the matrix is only computed once and stored in memory
+    
+    // Compute world-to-baycentric transformation matrix
+    
+  #ifndef USE_BRANCHLESS
+    // Branching version
+    if (an.x > an.y && an.x > an.z)
+    {
+        tmat1 = vec4(0., E2.z, -E2.y,  C.y * A.z - C.z * A.y) / n.x;
+        tmat2 = vec4(0., -E1.z, E1.y, -B.y * A.z + B.z * A.y) / n.x;
+        tmat3 = vec4(n.xyz, num) / n.x;
+        
+    } else if (an.y > an.z)
+    {
+        tmat1 = vec4(-E2.z, 0., E2.x,  C.z * A.x - C.x * A.z) / n.y;
+        tmat2 = vec4(E1.z, 0., -E1.x, -B.z * A.x + B.x * A.z) / n.y;
+        tmat3 = vec4(n.xyz, num) / n.y;
+    } else if (an.z > 0.)
+    {
+        tmat1 = vec4(E2.y, -E2.x, 0.,  C.x * A.y - C.y * A.x) / n.z;
+        tmat2 = vec4(-E1.y, E1.x, 0., -B.x * A.y + B.y * A.x) / n.z;
+        tmat3 = vec4(n.xyz, num) / n.z;
+    }
+    
+  #else
+    // No branching using array syntax
+    
+    /*
+    int ni;
+    if (an.x > an.y && an.x > an.z)
+        ni = 0;
+    else if (an.y > an.z)
+        ni = 1;
+    else if (an.z > 0.)
+        ni = 2;
+    */
+    
+    // Same as above using step
+    vec3 nn = step(an.yzx, an.xyz) * step(an.zxy, an.xyz);
+    int ni = int( dot(nn, vec3(0,1,2)) );
+    
+    int n1 = (ni + 1) % 3;
+    int n2 = (ni + 2) % 3;
+    int n3 = (1 - ni) % 3;
+    int n4 = (2 - ni) % 3;
+    int n5 = (3 - ni) % 3;
+    
+    tmat1 = vec4(E2[n5], E2[n4], E2[n3],  C[n1] * A[n2] - C[n2] * A[n1]) / n[ni];
+    tmat2 = vec4(E1[n5], E1[n4], E1[n3], -B[n1] * A[n2] + B[n2] * A[n1]) / n[ni];
+    tmat3 = vec4(n.xyz, num) / n[ni];
+    
+    tmat1[ni] = 0.;
+    tmat2[ni] = 0.;
+    
+    tmat1[n2] *= -1.;
+    tmat2[n1] *= -1.;
+    
+  #endif
+    
+    float s = dot(vec4(ro, 1), tmat3);
+    float d = dot(vec4(rd, 0), tmat3);
+    
+    // Distance
+    float t = -s / d;
+    
+    vec4 pos = vec4(ro + rd*t, 1);
+    
+    // UV
+    float u = dot(pos, tmat1);
+    float v = dot(pos, tmat2);
+    
+    if (u < 0. || v < 0. || (u + v) > 1.)
+        t = -1.;
+    
+    return vec3(t, u, v);
+}
  
+ float interpolateAttribute(in ObjectDefinition obj, in Hit hit, in uint totalAttrSize,
+                            in uint currentAttrOffset)
+ {
+    return dynamicVertexAttrs[
+            obj.vboStartIndex
+            + dynamicIndices[obj.indexIndex + hit.triIndex*3] * totalAttrSize
+            + currentAttrOffset
+        ] * hit.barycentric.x +
+        dynamicVertexAttrs[
+            obj.vboStartIndex
+            + dynamicIndices[obj.indexIndex + hit.triIndex*3 + 1] * totalAttrSize
+            + currentAttrOffset
+        ] * hit.barycentric.y +
+        dynamicVertexAttrs[
+            obj.vboStartIndex
+            + dynamicIndices[obj.indexIndex + hit.triIndex*3 + 2] * totalAttrSize
+            + currentAttrOffset
+        ] * (1 - hit.barycentric.x - hit.barycentric.y);
+    
+ }
+
+vec3 interpolate3(in ObjectDefinition obj, in Hit hit, in uint totalAttrSize,
+                    in uint currentAttrOffset)
+{
+    vec3 result;
+    for(uint attrPart = 0; attrPart < 3; attrPart++)
+    {
+        result[attrPart] = interpolateAttribute(obj, hit, totalAttrSize, currentAttrOffset + attrPart);
+    }
+    return result;
+}
+
+vec2 interpolate2(in ObjectDefinition obj, in Hit hit, in uint totalAttrSize,
+                    in uint currentAttrOffset)
+{
+    vec2 result;
+    for(uint attrPart = 0; attrPart < 2; attrPart++)
+    {
+        result[attrPart] = interpolateAttribute(obj, hit, totalAttrSize, currentAttrOffset + attrPart);
+    }
+    return result;
+}
+
+vec3 getMaterialColor(uint materialIndex, vec2 uv)
+{
+    vec3 color;
+    uint meaningMask = materials[materialIndex];
+    if((meaningMask & 1) == 1)
+    {
+        // This is effectively uint64_t
+        uvec2 albedoTexture = uvec2(materials[materialIndex+2], materials[materialIndex+1]);
+        // Return a color from a bindless texture
+        return texture2D(sampler2D(albedoTexture), uv).xyz;
+    }
+    else
+    {
+        return vec3(uintBitsToFloat(materials[materialIndex+1]),
+                    uintBitsToFloat(materials[materialIndex+2]),
+                    uintBitsToFloat(materials[materialIndex+3]));
+    }
+    return vec3(1);
+}
 
 vec3 rayTraceSubPixel(vec2 fragCoord) {
     Ray ray;
@@ -426,25 +647,28 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 	//getLookignGlassRay( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
     
     vec3 col;
-    for (uint o = 0; o < objectDefinitions.length();)
+    //float far = uProj[2].w / (uProj[2].z + 1.0);
+    float far = 1000;
+    Hit closestHit = Hit(0, 0, far, vec2(0));
+    for (uint o = 0; o < uObjectCount; o++)
     {
-        uint matIndex = objectDefinitions[o];
-        uint vboPosition = objectDefinitions[o+=1];
-        uint firstIndexIndex = objectDefinitions[o+=1];
-        uint indicesCount = objectDefinitions[o+=1];
-        uint vertAttrNum = objectDefinitions[o+=1];
-        uint totalAttrSize = objectDefinitions[o+=1];
+        ObjectDefinition obj = objectDefinitions[o];
+        uvec4 attrSizes = obj.attrSizes;
 
-        for(uint i = firstIndexIndex; i < firstIndexIndex + indicesCount; i+=3)
+        //Vertex pos is 3 floats wide, + other attrs
+        uint totalAttrSize = 3 + attrSizes.x+attrSizes.y+attrSizes.z+attrSizes.w;
+
+        // For each triangle
+        for(uint i = 0; i < obj.triNumber; i++)
         {
             vec3[3] triangle;//The first vertex attribute is always the position
             for(uint vertInTri = 0; vertInTri < 3; vertInTri++)
             {
                 // Pull vertices and construct a triangle
                 triangle[vertInTri] = vec3(
-                    dynamicVertexAttrs[vboPosition + dynamicIndices[i + vertInTri] * totalAttrSize],
-                    dynamicVertexAttrs[vboPosition + dynamicIndices[i + vertInTri] * totalAttrSize + 1],
-                    dynamicVertexAttrs[vboPosition + dynamicIndices[i + vertInTri] * totalAttrSize + 2]
+                    dynamicVertexAttrs[obj.vboStartIndex + dynamicIndices[obj.indexIndex + i*3 + vertInTri] * totalAttrSize],
+                    dynamicVertexAttrs[obj.vboStartIndex + dynamicIndices[obj.indexIndex + i*3 + vertInTri] * totalAttrSize + 1],
+                    dynamicVertexAttrs[obj.vboStartIndex + dynamicIndices[obj.indexIndex + i*3 + vertInTri] * totalAttrSize + 2]
                 );
             }
             float outT, outU, outV;
@@ -453,47 +677,57 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
                 triangle[1],
                 triangle[2],
                 outT, outU, outV))
-             {
-                // Interpolate other triangle attributes by barycentric coordinates
-                uint currentAttrOffset = 3;// skip first three values (vertex pos)
-                for(uint currentAttr = 1; currentAttr < vertAttrNum; currentAttr++)
+            {
+                if(outT < closestHit.rayT)
                 {
-                    uint currentAttrSize = objectDefinitions[o+=1];
-                    for(uint attrPart = 0; attrPart < currentAttrSize; attrPart++)
-                    {
-                        float interpolatedAttr = 
-                            dynamicVertexAttrs[
-                                vboPosition
-                                + dynamicIndices[i] * totalAttrSize
-                                + currentAttrOffset + attrPart
-                            ] * outU +
-                            dynamicVertexAttrs[
-                                vboPosition
-                                + dynamicIndices[i + 1] * totalAttrSize
-                                + currentAttrOffset + attrPart
-                            ] * outV +
-                            dynamicVertexAttrs[
-                                vboPosition
-                                + dynamicIndices[i + 2] * totalAttrSize
-                                + currentAttrOffset + attrPart
-                            ] * (1 - outU - outV);
-                        col[attrPart] = interpolatedAttr;
-                    }
-                    
+                    closestHit = Hit(o, i, outT, vec2(outU, outV));
                 }
-             }
-             else
-             {
-                vec3 outPos, outNorm;
-                if(getRayBoxIntersection(AnalyticalObject(vec3(0,-1,0), 1, vec3(100,0.1,100),0),ray, outPos, outNorm, outT))
-                {
-                    return outNorm * 0.5 + 0.5;
-                }
-                return vec3(0);
-             }
-        
+            }
         }
     }
+    if(closestHit.rayT != far)
+    {
+        ObjectDefinition obj = objectDefinitions[closestHit.object];
+        uvec4 attrSizes = obj.attrSizes;
+
+        //Vertex pos is 3 floats wide, + other attrs
+        uint totalAttrSize = 3 + attrSizes.x+attrSizes.y+attrSizes.z+attrSizes.w;
+        // Interpolate other triangle attributes by barycentric coordinates
+        uint currentAttrOffset = 3;// skip first three values (vertex pos)
+        switch(attrSizes.x)
+        {
+            // Normals or colors or UVWs
+            case 3:
+                vec3 normOrColor = interpolate3(obj, closestHit, totalAttrSize, currentAttrOffset);
+                return normOrColor;
+                break;
+            // UVs
+            case 2:
+                vec2 uv = interpolate2(obj, closestHit, totalAttrSize, currentAttrOffset);
+                return getMaterialColor(obj.material, uv);
+                break;
+        }
+        currentAttrOffset += attrSizes.x;
+        switch(attrSizes.y)
+        {
+            // Normals or colors or UVWs
+            case 3:
+                vec3 normOrColor = interpolate3(obj, closestHit, totalAttrSize, currentAttrOffset);
+                break;
+            // UVs
+            case 2:
+                vec2 uv = interpolate2(obj, closestHit, totalAttrSize, currentAttrOffset);
+                break;
+        }
+        currentAttrOffset += attrSizes.y;
+    }
+    vec3 outPos, outNorm;
+    float outT;
+    if(getRayBoxIntersection(AnalyticalObject(vec3(0,-1,0), 1, vec3(100,0.1,100),0),ray, outPos, outNorm, outT))
+    {
+        return outNorm * 0.5 + 0.5;
+    }
+    return vec3(0);
 
     // gamma correction	
 	col = pow( col, vec3(0.4545) );
@@ -506,10 +740,11 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
 
 void main() {
     vec3 col = vec3(0);
-    for(subpI = 0; subpI < 3; subpI++)
+    /*for(subpI = 0; subpI < 3; subpI++)
     {
         col[subpI] = rayTraceSubPixel(vNDCpos)[subpI];
-    }
+    }*/
+    col = rayTraceSubPixel(vNDCpos);
 	
     // output
 	OutColor = vec4( col, 1.0 );

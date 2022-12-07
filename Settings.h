@@ -1,4 +1,6 @@
 #pragma once
+#include <filesystem>
+#include <assimp/vector3.h>
 #include "FirstPersonController.h"
 namespace ProjectSettings {
 	inline float fov = 60;
@@ -14,4 +16,12 @@ namespace ProjectSettings {
 	} GlobalScreenType;
 	inline bool changeScreenType = false;
 	inline bool recompileFShaders = false;
+	inline bool reloadScene = true;
+	inline struct {
+		std::filesystem::path path = "";
+		aiVector3D scale = { 1,1,1 };
+		aiVector3D position;
+		aiVector3D rotationDeg ;
+	} scene;
+	inline int objectCountLimit = 2;
 };

@@ -1,10 +1,10 @@
 ﻿// LookingGlassPT.cpp : Defines the entry point for the application.
 //
+#include "PrecompiledHeaders.hpp"
 #ifdef WIN32
 #include <Windows.h>
 #endif
 #include "LookingGlassPT.h"
-#include <iostream>
 #include <SDL2/SDL.h>
 #undef main
 #include <GL/glew.h>
@@ -15,9 +15,8 @@
 #include "imgui_internal.h"
 #include "ControlWindow.h"
 #include "ProjectWindow.h"
-#include <thread>
-#include <mutex>
-#define WINDOW_X 500
+
+#define WINDOW_X 5
 #define WINDOW_Y 100
 #define WINDOW_W 640
 #define WINDOW_H 480
@@ -119,6 +118,7 @@ int main(int argc, const char** argv)
 								window->processImGuiEvent(events.front());
 								events.pop_front();
 							}
+							window->beginFrame();
 							window->render();
 							window->flushRender();
 						}

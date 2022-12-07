@@ -1,8 +1,6 @@
 #pragma once
-#include <vector>
-#include <nlohmann/json.hpp>
+#include "PrecompiledHeaders.hpp"
 #include <ostream>
-#include <glm/glm.hpp>
 
 struct Calibration {
 	// Based on https://github.com/dormon/3DApps/blob/master/src/holoCalibration.h

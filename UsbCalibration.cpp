@@ -3,8 +3,6 @@
 #include "UsbCalibration.h"
 #include <libusb-1.0/libusb.h>
 #include <stdexcept>
-#include <iostream>
-#include <nlohmann/json.hpp>
 
 std::vector<HoloDevice> UsbCalibration::getDevices()
 {

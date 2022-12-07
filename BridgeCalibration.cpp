@@ -8,7 +8,6 @@
 #include <condition_variable> // std::condition_variable, std::cv_status
 #include <format>
 #include <process.hpp>
-#include <nlohmann/json.hpp>
 #include "alert_exception.h"
 #include "Helpers.h"
 #ifdef _WIN32

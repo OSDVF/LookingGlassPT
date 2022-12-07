@@ -53,6 +53,10 @@ target_include_directories(LookingGlassPT PRIVATE ${STB_INCLUDE_DIRS})
 find_package(unofficial-nativefiledialog CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE unofficial::nativefiledialog::nfd)
 
+find_package(Boost REQUIRED)
+INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR} )
+target_link_libraries(LookingGlassPT PUBLIC ${Boost_LIBRARIES})
+
 # 
 # Include node.js program in the compilation
 # depends on npm
@@ -87,6 +91,7 @@ if(ASAN_ENABLED)
 endif()
 
 target_sources(LookingGlassPT PRIVATE dpiAware.manifest)
+target_precompile_headers(LookingGlassPT PUBLIC PrecompiledHeaders.hpp)
 
 
 if (WIN32)

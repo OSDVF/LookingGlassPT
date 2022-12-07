@@ -11,6 +11,7 @@
     "tiny-process-library",
     "assimp",
     "stb",
-    "nativefiledialog"
+    "nativefiledialog",
+    "boost-stacktrace"
   ]
 }

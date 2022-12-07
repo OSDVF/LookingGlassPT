@@ -1,9 +1,10 @@
 #pragma once
 #include "AppWindow.h"
 #include "Settings.h"
+#include "GlHelpers.h"
 #include <imgui.h>
 #include <array>
-#include <glm/gtc/type_ptr.hpp>
+#include <nfd.h>
 
 // This window is 'lazy' or power-saving, so it doesn't have a draw() method
 template <size_t count>
@@ -15,6 +16,10 @@ public:
 	{
 
 	}
+
+	bool logarithmicScale = true;
+	bool uniformScale = true;
+	const char* fileErrorDialog = "File Selection Error";
 	// Redraws only when a event occurs
 	void renderOnEvent(std::deque<SDL_Event> events) override
 	{
@@ -68,6 +73,82 @@ public:
 		}
 		ImGui::SliderFloat("View Cone", &ProjectSettings::viewCone, 10.f, 80.f);
 		ImGui::SliderFloat("Focus Distance", &ProjectSettings::focusDistance, 0.f, 40.f);
+		if (ImGui::TreeNodeEx("Scene", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			if (ProjectSettings::scene.path.empty())
+			{
+				ImGui::Text("No Scene Loaded");
+			}
+			else
+			{
+				ImGui::Text("%s", ProjectSettings::scene.path.filename().string().c_str());
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Select"))
+			{
+				nfdchar_t* outPath = nullptr;
+				nfdresult_t result = NFD_OpenDialog(NULL, NULL, &outPath);
+
+				if (result == NFD_OKAY) {
+					std::cout << "Selected " << outPath << std::endl;
+					ProjectSettings::scene.path = outPath;
+					free(outPath);
+				}
+				else if (result == NFD_CANCEL) {
+					std::cout << "Scene file section cancelled.\n";
+				}
+				else {
+					ImGui::OpenPopup(fileErrorDialog);
+				}
+			}
+			if (ImGui::BeginPopup(fileErrorDialog))
+			{
+				ImGui::TextWrapped("Error: %s", NFD_GetError());
+				ImGui::EndPopup();
+			}
+			if (logarithmicScale)
+			{
+				auto scPowerText = "Scale Power";
+				glm::vec3 scalePower = { log10(ProjectSettings::scene.scale.x), log10(ProjectSettings::scene.scale.y), log10(ProjectSettings::scene.scale.z) };
+				if (uniformScale ? ImGui::DragFloat(scPowerText, glm::value_ptr(scalePower), .1f, -5, 5) :
+					ImGui::DragFloat3(scPowerText, glm::value_ptr(scalePower), .1f, -5, 5))
+				{
+					if (uniformScale)
+					{
+						scalePower.y = scalePower.z = scalePower.x;
+					}
+					ProjectSettings::scene.scale = GlHelpers::structConvert<aiVector3D, glm::vec3>(glm::pow(glm::vec3(10.f), scalePower));
+				}
+			}
+			else
+			{
+				if (uniformScale)
+				{
+					ImGui::DragFloat("Scale##Scene", &ProjectSettings::scene.scale.x, 100.f, 0.00001, 100000, "%f", ImGuiSliderFlags_Logarithmic);
+					ProjectSettings::scene.scale.y = ProjectSettings::scene.scale.z = ProjectSettings::scene.scale.x;
+				}
+				else
+				{
+					ImGui::DragFloat3("Scale##Scene", &ProjectSettings::scene.scale.x, 100.f, 0.00001, 100000, "%f", ImGuiSliderFlags_Logarithmic);
+				}
+			}
+			ImGui::TreePush();
+			ImGui::Checkbox("Logarithmic Scale", &logarithmicScale);
+			ImGui::SameLine();
+			ImGui::Checkbox("Uniform", &uniformScale);
+			ImGui::TreePop();
+			ImGui::DragFloat3("Position##Scene", &ProjectSettings::scene.position.x, .1f, -10000, 10000);
+			ImGui::DragFloat3("Rotation (deg)", &ProjectSettings::scene.rotationDeg.x, .1f, 0.f, 360.f - FLT_EPSILON);
+
+			if (ImGui::Button("(Re)load"))
+			{
+				ProjectSettings::reloadScene = true;
+			}
+			ImGui::TreePop();
+			int step = 1;
+			ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &ProjectSettings::objectCountLimit, &step);
+		}
+
 
 		ImGui::End();
 	}

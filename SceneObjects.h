@@ -5,11 +5,23 @@
 #include <glm/glm.hpp>
 #include <sstream>
 
-inline std::string debugArray(const char* data, size_t len) {
+inline std::string debugArray(const char* data, size_t len, bool fl) {
 	std::stringstream out;
-	for (size_t i = 0; i < len; ++i)
-		out << std::uppercase << std::hex << std::setfill('0') << std::setw(2) << (((int)data[i]) & 0xFF) << " ";
-	out << std::endl;
+	if (fl)
+	{
+		for (size_t i = 0; i < len; i+=sizeof(float))
+		{
+			out << *(float*)&data[i] << ' ';
+		}
+	}
+	else
+	{
+		for (size_t i = 0; i < len; ++i)
+		{
+			out << std::uppercase << std::hex << std::setfill('0') <<
+				std::setw(2) << (((int)data[i]) & 0xFF) << " ";
+		}
+	}
 	return out.str();
 }
 
@@ -89,25 +101,25 @@ struct StaticLinkedList<val, Rest...> {
 };
 
 template <uint32_t... VertexAttrs>
-struct SceneObject {
+struct DynamicSceneObject {
 	using AttrList = StaticLinkedList<VertexAttrs...>;
 	uint32_t materialNumber;
 	uint32_t vboPosition;
-	uint32_t modelBaseIndex;
+	uint32_t iboPosition;
 	uint32_t indicesCount;
 
 	uint32_t vertexAttributeCount;
 	uint32_t totalVertexSize = 0;
 	AttrList attributeSizes;
 
-	SceneObject(uint32_t materialNumber,
+	DynamicSceneObject(uint32_t materialNumber,
 		uint32_t vboPosition,
-		uint32_t modelBaseIndex,
+		uint32_t iboPosition,
 		uint32_t indicesCount)
 		:
 		materialNumber(materialNumber),
 		vboPosition(vboPosition),
-		modelBaseIndex(modelBaseIndex),
+		iboPosition(iboPosition),
 		indicesCount(indicesCount),
 		vertexAttributeCount(sizeof...(VertexAttrs)),
 		totalVertexSize((VertexAttrs + ...))
@@ -117,9 +129,11 @@ struct SceneObject {
 	std::stringstream to_print() {
 		std::stringstream s;
 		s << "MN: " << materialNumber << std::endl;
-		s << "I: " << modelBaseIndex << std::endl;
+		s << "V: " << vboPosition << std::endl;
+		s << "I: " << iboPosition << std::endl;
 		s << "IC: " << indicesCount << std::endl;
 		s << "A: " << vertexAttributeCount << std::endl;
+		s << "T: " << totalVertexSize << std::endl;
 
 		((s << VertexAttrs << ' '), ...);
 		s << std::endl;
@@ -127,10 +141,18 @@ struct SceneObject {
 	}
 };
 
+struct SceneObject {
+	uint32_t material;
+	uint32_t vboStartIndex;
+	uint32_t indexIndex;
+	uint32_t triNumber;
+	glm::uvec4 attrSizes;
+};
+
 class anySized
 {
 public:
-	std::byte* data;
+	void* data = nullptr;
 	std::size_t size = 0;
 	const std::type_info& type;
 	template <typename T>
@@ -141,9 +163,20 @@ public:
 		data = new std::byte[size];
 		std::memcpy(data, &item, size);
 	}
+	anySized(const anySized& other) = delete;
+	/* :
+		type(other.type)
+	{
+		size = other.size;;
+		data = new std::byte[size];
+		std::memcpy(data, other.data, size);
+	}*/
 	~anySized()
 	{
-		delete[] data;
+		if (data != nullptr)
+		{
+			delete[] data;
+		}
 	}
 };
 
@@ -161,15 +194,52 @@ public:
 	std::stringstream buffer;
 
 public:
-	template <typename T>
-	void push(const T&& item) {
-		auto s = sizeof(std::decay_t<T>);
-		totalSize += s;
-		types.push_back({ s, typeid(T) });
+	void push(const anySized&& item) {
+		totalSize += item.size;
+		types.push_back({ item.size, item.type });
 		buffer.write(
 			reinterpret_cast<const char*>(item.data),
 			item.size
 		);
+	}
+
+	void push(const anySized& item) {
+		totalSize += item.size;
+		types.push_back({ item.size, item.type });
+		buffer.write(
+			reinterpret_cast<const char*>(item.data),
+			item.size
+		);
+	}
+
+	void push(const std::initializer_list<anySized>&& items)
+	{
+		for (auto&& item : items)
+		{
+			this->push(item);
+		}
+	}
+
+	/**
+	* Pushes a value into the buffer and increnets a counter by the value's size
+	*/
+	template<typename CounterT>
+	void push(const anySized&& item, CounterT& counter) {
+		totalSize += item.size;
+		counter += item.size;
+		types.push_back({ item.size, item.type });
+		buffer.write(
+			reinterpret_cast<const char*>(item.data),
+			item.size
+		);
+	}
+
+	void clear()
+	{
+		types.clear();
+		buffer.str("");
+		buffer.clear();
+		totalSize = 0;
 	}
 
 	anyVector(std::initializer_list<anySized>&& items)
@@ -184,7 +254,12 @@ public:
 			);
 		}
 	}
-	std::stringstream debug()
+	anyVector()
+	{
+
+	}
+
+	std::stringstream debug(bool fl = false)
 	{
 		std::stringstream s;
 		std::size_t i = 0;
@@ -192,10 +267,11 @@ public:
 		for (auto& type : types)
 		{
 			s << i << ": " << type.type.name() << std::endl;
-			s << debugArray(buffer.view().data(), buffer.view().size()) << std::endl;
+			s << debugArray(buffer.view().data() + offset, type.size, fl) << std::endl;
 			//s << ((Printable*)buffer.view().substr(offset, type.size).data())->to_print().rdbuf();
 			s << "(" << type.size << " bytes)" << std::endl;
 			i++;
+			offset += type.size;
 		}
 		s << std::endl;
 		return s;
