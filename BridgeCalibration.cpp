@@ -71,7 +71,7 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 		[&](const char* bytes, size_t n)
 		{
 			auto stringVersion = std::string(bytes, n);
-	if (stringVersion.substr(0, 7) == "alert: ")
+	if (stringVersion.starts_with("alert: "))
 	{
 		alerts << stringVersion.substr(7) << std::endl;
 	}
@@ -105,7 +105,12 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	}
 		},
 		[&](const char* bytes, size_t n) {
-			std::cerr << "Bridge Error: " << std::string(bytes, n);
+			auto stringVersion = std::string(bytes, n);
+			std::cerr << "Bridge Error: " << stringVersion;
+			if (stringVersion.starts_with("no devices connected"))
+			{
+				alerts << "No Looking Glass devices connected." << std::endl;
+			}
 		// Add a newline for prettier output on some platforms:
 		if (bytes[n - 1] != '\n')
 			std::cout << std::endl;
@@ -122,7 +127,7 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	thread.join();
 	if (alerts.tellp() > 0)
 	{
-		throw alert_exception(std::format("Looking Glass Bridge says: {}", alerts.str()));
+		throw alert_exception(alerts.str());
 	}
 	return result;
 }

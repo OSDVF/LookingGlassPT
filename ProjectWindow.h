@@ -5,7 +5,6 @@
 #include <fstream>
 #include <sstream>
 #include <array>
-#include <vector>
 #include <string>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -24,10 +23,12 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include "alert_exception.h"
 
 using namespace ProjectSettings;
 class ProjectWindow : public AppWindow {
 public:
+	std::string calibrationAlert;
 	GLuint fShader;
 	GLuint fFlatShader;
 	GLuint vShader;
@@ -38,7 +39,7 @@ public:
 	GLuint uCalibrationHandle;
 	struct {
 		GLuint vertex;
-		GLuint index;
+		GLuint triangles;
 		GLuint objects;
 		GLuint material;
 		GLuint textures;
@@ -59,13 +60,13 @@ public:
 		GLint uObjectCount;
 		BufferDefinition uCalibration;
 		BufferDefinition uObjects;
-		BufferDefinition Vertex;
-		BufferDefinition Index;
+		BufferDefinition Attribute;
+		BufferDefinition Triangles;
 		BufferDefinition Material;
 	} shaderInputs;
 
-	anyVector vertices;
-	std::vector<unsigned int> indices;
+	anyVector vertexAttrs;
+	std::vector<FastTriangle> triangles;
 	std::vector<SceneObject> objects;
 	anyVector materials;
 
@@ -146,12 +147,12 @@ public:
 		glBufferData(GL_UNIFORM_BUFFER, 0, objects.data(), GL_STATIC_READ);
 		glBindBufferBase(GL_UNIFORM_BUFFER, shaderInputs.uObjects.location, bufferHandles.objects);
 
-		createFlexibleBuffer(bufferHandles.vertex, shaderInputs.Vertex.location, vertices);
+		createFlexibleBuffer(bufferHandles.vertex, shaderInputs.Attribute.location, vertexAttrs);
 
-		glGenBuffers(1, &bufferHandles.index);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.index);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_READ);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Index.location, bufferHandles.index);
+		glGenBuffers(1, &bufferHandles.triangles);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.triangles);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, triangles.size() * sizeof(FastTriangle), triangles.data(), GL_STATIC_READ);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Triangles.location, bufferHandles.triangles);
 
 		createFlexibleBuffer(bufferHandles.material, shaderInputs.Material.location, materials);
 
@@ -165,6 +166,8 @@ public:
 		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
 		person.Camera.SetCenter(glm::vec2(windowWidth / 2, windowHeight / 2));
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		loadTestScene();
+		updateBuffers();
 	}
 	void createFlexibleBuffer(GLuint& bufferHandle, GLuint index, anyVector& buffer)
 	{
@@ -202,13 +205,17 @@ public:
 				std::cout << "Trying USB calibration..." << std::endl;
 				calibration = UsbCalibration().getCalibration();
 			}
-			std::cout << "Calibration success: " << std::endl << calibration;
 			GlobalScreenType = ScreenType::LookingGlass;
+			std::cout << "Calibration success: " << std::endl << calibration;
+		}
+		catch (const alert_exception& e)
+		{
+			calibrationAlert = e.what();
 		}
 		catch (const std::exception& e)
 		{
 			std::cerr << e.what() << std::endl;
-			std::cerr << "Calibration failed. Using default values." << std::endl;
+			std::cerr << "Calibration failed. Displaying flat screen version. LG version will use default values." << std::endl;
 		}
 	}
 
@@ -231,11 +238,11 @@ public:
 				glGetUniformBlockIndex(program, "ObjectBuffer")
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,  "VertexBuffer"),
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,  "AttributeBuffer"),
 				2
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "IndexBuffer"),
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "TriangleBuffer"),
 				3
 			},
 			{
@@ -276,72 +283,7 @@ public:
 	const char* sceneLoadingFailed = "Failed to load scene";
 	void render() override
 	{
-		if (ProjectSettings::changeScreenType)
-		{
-			swapScreens();
-			ProjectSettings::changeScreenType = false;
-		}
-		if (ProjectSettings::recompileFShaders)
-		{
-			recompileFShaders = false;
-			recompileFragmentSh();
-			GlHelpers::linkProgram(program);
-			bindShaderInputs();
-			glUniform2f(shaderInputs.uWindowSize, windowWidth, windowHeight);
-		}
-		if (ProjectSettings::reloadScene)
-		{
-			ProjectSettings::reloadScene = false;
-			objects.clear();
-			vertices.clear();
-			indices.clear();
-			materials.clear();
-			clearTextures();
-
-			//if (!loadTestScene())
-			if (Import3DFromFile(ProjectSettings::scene.path))
-			{
-				if (true || LoadGLTextures(gScene))
-				{
-					SubmitScene(gScene, nullptr, aiMatrix4x4(scene.scale, aiQuaternion(scene.rotationDeg.x, scene.rotationDeg.y, scene.rotationDeg.z), scene.position));
-				}
-				else
-				{
-					ImGui::OpenPopup(textureLoadingFailed);
-					std::cerr << "Texture loading failed \n";
-				}
-			}
-			else
-			{
-				ImGui::OpenPopup(sceneLoadingFailed);
-				std::cerr << "Scene loading failed \n";
-			}
-
-			updateFlexibleBuffer(bufferHandles.vertex, vertices);
-			updateFlexibleBuffer(bufferHandles.index, indices);
-			updateFlexibleBuffer(bufferHandles.material, materials);
-			submitObjectBuffer();
-			std::cout << "Scene " << scene.path.filename() << " loaded." << std::endl
-				<< "Total:\n"
-				<< "Obj " << objects.size() << " (" << objects.size() * sizeof(SceneObject) << " bytes)" << std::endl
-				<< "Vert " << vertices.types.size() << " (" << vertices.totalSize << " bytes)" << std::endl
-				<< "Ind " << indices.size() << " (" << indices.size() * sizeof(unsigned int) << " bytes)" << std::endl
-				<< "Mat " << materials.types.size() << " (" << materials.totalSize << " bytes)" << std::endl
-				<< "Tex " << textureHandleMap.size() << std::endl;
-		}
-		if (ImGui::BeginPopup(textureLoadingFailed))
-		{
-			ImGui::TextWrapped("Encountered error when loading texture");
-			ImGui::EndPopup();
-		}
-		if (ImGui::BeginPopup(sceneLoadingFailed))
-		{
-			ImGui::TextWrapped("Encountered error when loading scene");
-			ImGui::EndPopup();
-		}
-		ImGui::Begin("Info");
-		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-		ImGui::End();
+		ui();
 		glBindVertexArray(fullScreenVAO);
 		glUseProgram(program);
 		glUniform1f(shaderInputs.uTime, frame);
@@ -436,16 +378,18 @@ public:
 
 	bool loadTestScene()
 	{
-		vertices.push({ glm::vec3(0.5, 1, 1),//pos
-			glm::vec3{ 1,0,0 },//color
+		triangles.push_back(toFast(
+			glm::vec3(0.5, 1, 1),
 			glm::vec3{ 1, 0, 1 },//pos
+			glm::vec3{ 0, 0, 1 },//pos,
+			glm::uvec3(0, 1, 2)
+		));
+		vertexAttrs.push({
+			glm::vec3{ 1,0,0 },//color
 			glm::vec3{ 0,1,0 },//color
-			glm::vec3{ 0, 0, 1 },//pos
 			glm::vec3{ 0,0,1 }//color
 			}
 		);
-
-		indices.insert(indices.end(), { 0, 1, 2 });
 
 
 		objects.push_back(SceneObject{
@@ -456,6 +400,7 @@ public:
 				glm::uvec4(3,0,0,0)//attribute sizes (does not include vertex pos, because it is implicit)
 			});
 
+
 		materials.push(Material<color, color, color, color, color>{
 			{1.f, 1.f, 1.f},
 			{ 1.f,1.f,1.f },
@@ -464,14 +409,15 @@ public:
 			{ 1.f,1.f,1.f }
 		});
 
-		uint32_t vboCursor = vertices.totalSize / sizeof(float);
-		uint32_t iboCursor = indices.size();
+		uint32_t vboCursor = vertexAttrs.totalSize / sizeof(float);
+		uint32_t triCursor = triangles.size();
 
 		const float R = 5.0f;
 		const float N = 10;
 		const float M = 10;
 		int index = 0;
-
+		std::vector<uint32_t> indices;
+		std::vector<glm::vec3> vertices;
 		for (float i = 0; i < N; i++)
 		{
 			auto pointOnRing = getRingPoint(R, N, i);
@@ -484,9 +430,10 @@ public:
 				auto onPrevSubRing = getSubRingPoint(M, j, nextRing);
 				if ((int)j % 2 == 0)
 				{
-					vertices.push(
-						{ onSubRing, hsl2rgb(i / N, 1, j / M) }
+					vertexAttrs.push(
+						hsl2rgb(i / N, 1, j / M)
 					);
+					vertices.push_back(onSubRing);
 					indices.push_back(index++);
 				}
 				else
@@ -495,9 +442,10 @@ public:
 				}
 				if (j == 0)
 				{
-					vertices.push(
-						{ onPrevSubRing, hsl2rgb((i + 1) / N, 1, j / M) }
+					vertexAttrs.push(
+						hsl2rgb((i + 1) / N, 1, j / M)
 					);
+					vertices.push_back(onPrevSubRing);
 					indices.push_back(index++);
 				}
 				else
@@ -506,9 +454,11 @@ public:
 				}
 				if ((int)j % 2 == 0)
 				{
-					vertices.push(
-						{ onNextSubRing, hsl2rgb((i + 1) / N, 1, (j + 2) / M) }
+					vertexAttrs.push(
+						hsl2rgb((i + 1) / N, 1, (j + 2) / M)
 					);
+					vertices.push_back(onNextSubRing);
+
 					indices.push_back(index++);
 				}
 				else
@@ -541,13 +491,23 @@ public:
 				}
 			}
 		}
+		for (std::size_t i = 0; i < indices.size(); i += 3)
+		{
+			triangles.push_back(toFast(
+				vertices[indices[i]],
+				vertices[indices[i + 1]],
+				vertices[indices[i + 2]],
+				glm::uvec3(indices[i], indices[i + 1], indices[i + 2])
+			));
+		}
+
 
 		objects.push_back(SceneObject
 			{//attribute sizes
 				0,//material
 				vboCursor,//VBO position in global vertex buffer
-				iboCursor,//first index index
-				(uint32_t)indices.size() / 3 - iboCursor,//total indices
+				triCursor,//first index index
+				(uint32_t)indices.size() / 3,//total indices
 				glm::uvec4(3,0,0,0)//attribute sizes
 			}
 		);
@@ -563,16 +523,14 @@ public:
 	bool focal = false;
 	bool fullscreen = false;
 
-	void swapScreens()
+	void applyScreenType()
 	{
-		if (GlobalScreenType == ScreenType::Flat)
+		if (GlobalScreenType == ScreenType::LookingGlass)
 		{
-			GlobalScreenType = ScreenType::LookingGlass;
 			swapShaders(fFlatShader, fShader);
 		}
 		else
 		{
-			GlobalScreenType = ScreenType::Flat;
 			swapShaders(fShader, fFlatShader);
 		}
 	}
@@ -581,6 +539,112 @@ public:
 	{
 		AppWindow::renderOnEvent(e);
 		render();
+	}
+
+	void ui()
+	{
+		const char* calibrationAlertText = "Calibration Warning";
+		if (!calibrationAlert.empty())
+		{
+			ImGui::OpenPopup(calibrationAlertText);
+		}
+		if (ProjectSettings::applyScreenType)
+		{
+			ProjectSettings::applyScreenType = false;
+			applyScreenType();
+		}
+		if (ProjectSettings::recompileFShaders)
+		{
+			recompileFShaders = false;
+			recompileFragmentSh();
+			GlHelpers::linkProgram(program);
+			bindShaderInputs();
+			glUniform2f(shaderInputs.uWindowSize, windowWidth, windowHeight);
+			updateBuffers();
+		}
+		if (ProjectSettings::debugOutput)
+		{
+			glEnable(GL_DEBUG_OUTPUT);
+		}
+		else
+		{
+			glDisable(GL_DEBUG_OUTPUT);
+		}
+		if (ProjectSettings::reloadScene)
+		{
+			ProjectSettings::reloadScene = false;
+			objects.clear();
+			vertexAttrs.clear();
+			triangles.clear();
+			materials.clear();
+			clearTextures();
+
+			if (Import3DFromFile(ProjectSettings::scene.path))
+			{
+				if (true || LoadGLTextures(gScene))
+				{
+					SubmitScene(gScene, nullptr, aiMatrix4x4(scene.scale, aiQuaternion(scene.rotationDeg.x, scene.rotationDeg.y, scene.rotationDeg.z), scene.position));
+				}
+				else
+				{
+					ImGui::OpenPopup(textureLoadingFailed);
+					std::cerr << "Texture loading failed \n";
+				}
+			}
+			else
+			{
+				ImGui::OpenPopup(sceneLoadingFailed);
+				std::cerr << "Scene loading failed \n";
+			}
+
+			updateBuffers();
+			std::cout << "Scene " << scene.path.filename() << " loaded." << std::endl
+				<< "Total:\n"
+				<< "Obj " << objects.size() << " (" << objects.size() * sizeof(SceneObject) << " bytes)" << std::endl
+				<< "Attr " << vertexAttrs.types.size() << " (" << vertexAttrs.totalSize << " bytes)" << std::endl
+				<< "Tri " << triangles.size() << " (" << triangles.size() * sizeof(FastTriangle) << " bytes)" << std::endl
+				<< "Mat " << materials.types.size() << " (" << materials.totalSize << " bytes)" << std::endl
+				<< "Tex " << textureHandleMap.size() << std::endl;
+		}
+		if (ImGui::BeginPopup(textureLoadingFailed))
+		{
+			ImGui::TextWrapped("Encountered error when loading texture");
+			if (ImGui::Button("Close"))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+		if (ImGui::BeginPopup(sceneLoadingFailed))
+		{
+			ImGui::TextWrapped("Encountered error when loading scene");
+			if (ImGui::Button("Close"))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+		ImGui::Begin("Info");
+		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+		ImGui::End();
+		if (ImGui::BeginPopup(calibrationAlertText))
+		{
+			ImGui::TextWrapped(calibrationAlert.c_str());
+			if (ImGui::Button("Close"))
+			{
+				calibrationAlert.clear();
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+	}
+
+	void updateBuffers()
+	{
+		updateFlexibleBuffer(bufferHandles.vertex, vertexAttrs);
+		updateFlexibleBuffer(bufferHandles.triangles, triangles);
+		updateFlexibleBuffer(bufferHandles.material, materials);
+		submitObjectBuffer();
 	}
 
 	bool workOnEvent(SDL_Event event, float deltaTime) override
@@ -622,7 +686,15 @@ public:
 				ProjectSettings::recompileFShaders = true;
 				break;
 			case SDL_KeyCode::SDLK_l:
-				ProjectSettings::changeScreenType = true;
+				if (GlobalScreenType == ScreenType::Flat)
+				{
+					GlobalScreenType = ScreenType::LookingGlass;
+				}
+				else
+				{
+					GlobalScreenType = ScreenType::Flat;
+				}
+				ProjectSettings::applyScreenType = true;
 				break;
 			}
 			break;
@@ -952,6 +1024,39 @@ public:
 			*/
 	}
 
+	std::size_t pushAttributes(const aiMesh* mesh, std::size_t& index, const aiMatrix4x4& transMat)
+	{
+		//auto uvNum = mesh->GetNumUVChannels();
+		auto uvNum = mesh->HasTextureCoords(0) ? 1 : 0;
+
+		std::size_t attrFloatsCount = 0;
+		if (mesh->mNormals != nullptr)// If the mesh has vertex colors
+		{
+			auto norm = mesh->mNormals[index];
+			vertexAttrs.push(norm);
+			attrFloatsCount += 3;
+		}
+		for (unsigned int c = 0; c < mesh->GetNumColorChannels(); c++)
+		{
+			auto col = mesh->mColors[c][index];
+			vertexAttrs.push(col);
+			attrFloatsCount += 4;
+		}
+		for (unsigned int t = 0; t < uvNum; t++)
+		{
+			assert(mesh->mNumUVComponents[t] == 2);
+			//for (auto t = (decltype(mesh->mNumUVComponents[0]))0;
+			//	t < mesh->mNumUVComponents[0]; t++)
+			{
+				auto tCor = mesh->mTextureCoords[t][index];
+				vertexAttrs.push(tCor.x);
+				vertexAttrs.push(tCor.y);
+				attrFloatsCount += 2;
+			}
+		}
+		return attrFloatsCount;
+	}
+
 	void SubmitScene(const struct aiScene* sc, const struct aiNode* nd = nullptr, aiMatrix4x4 parentTransform = aiMatrix4x4())
 	{
 		if (nd == nullptr)
@@ -978,50 +1083,33 @@ public:
 			}
 			const struct aiMesh* mesh = sc->mMeshes[nd->mMeshes[n]];
 
-			auto vboCursorPos = vertices.totalSize / sizeof(float);
-			auto iboCursorPos = indices.size();
+			auto vboCursorPos = vertexAttrs.totalSize / sizeof(float);
+			auto triCursorPos = triangles.size();
 			auto materialIndex = materials.totalSize / sizeof(float);
-			//auto uvNum = mesh->GetNumUVChannels();
-			auto uvNum = mesh->HasTextureCoords(0) ? 1 : 0;
-			// Fill the vertex attribute buffer
+
 			for (std::size_t v = 0; v < mesh->mNumVertices; v++)
 			{
-				auto vertPos = mesh->mVertices[v];
-				vertPos = transMat * vertPos; // Apply transformation matrix to the 
-				vertices.push(vertPos);
-				if (mesh->mNormals != nullptr)// If the mesh has vertex colors
-				{
-					vertices.push(mesh->mNormals[v]);
-				}
-				//for (unsigned int c = 0; c < mesh->GetNumColorChannels(); c++)
-				//{
-				//	vertices.push(mesh->mColors[c][v]);
-				//}
-				//for (unsigned int t = 0; t < uvNum; t++)
-				//{
-				//	assert(mesh->mNumUVComponents[t] == 2);
-				//	//for (auto t = (decltype(mesh->mNumUVComponents[0]))0;
-				//	//	t < mesh->mNumUVComponents[0]; t++)
-				//	{
-				//		auto tCor = mesh->mTextureCoords[t][v];
-				//		vertices.push(tCor.x);
-				//		vertices.push(tCor.y);
-				//	}
-				//}
+				pushAttributes(mesh, v, transMat);
 			}
+			// Construct triangle lookup table
 			for (std::size_t f = 0; f < mesh->mNumFaces; f++)
 			{
 				const struct aiFace* face = &mesh->mFaces[f];
 				assert(face->mNumIndices == 3);// Support triangles only
-				for (std::size_t i = 0; i < face->mNumIndices; i++)
-				{
-					indices.push_back(face->mIndices[i]);
-				}
+
+				// Apply transformation matrix and construct a trinagle
+				glm::uvec3 indices = { face->mIndices[0], face->mIndices[1], face->mIndices[2] };
+				glm::vec3 v0 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.x]);
+				glm::vec3 v1 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.y]);
+				glm::vec3 v2 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.z]);
+				auto fastTri = toFast(v0, v1, v2, indices);
+				triangles.push_back(fastTri);
 			}
+
 			if (mesh->mNormals != nullptr)
 			{
 				objects.push_back(SceneObject(
-					materialIndex, vboCursorPos, iboCursorPos, mesh->mNumFaces,
+					materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,
 					glm::uvec4(3, 0, 0, 0)
 				)
 				);
@@ -1029,7 +1117,7 @@ public:
 			else
 			{
 				objects.push_back(SceneObject(
-					materialIndex, vboCursorPos, iboCursorPos, mesh->mNumFaces,
+					materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,
 					glm::uvec4(2, 0, 0, 0)
 				)
 				);

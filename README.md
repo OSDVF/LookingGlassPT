@@ -11,6 +11,7 @@ Yet another quick school project.
 - Loading scenes (many supported formats through [assimp](https://github.com/assimp/assimp))
 - Realtime path tracing
 - Input processing on one thread and rendering on another thread (event queue synchronization may be slow, but VS profiler shows 'not that much'🙃)
+- Works even if you set display scaling different than 100% (like me)
 
 ## Build
 - There was the aim to make this project portable, but it was tested only on Windows 10 x64 with GTX 1050 Mobile
@@ -55,11 +56,11 @@ Optional program arguments
 	- `assimp`
 	- `stb` - for loading scene textures 
 	- `nativefiledialog` - for the selection of scene file
+	- `boost-stacktrace` - for nice debug info
 
 # Thanks to
 - [Department of Computer Graphics and Multimedia at FIT BUT](https://www.fit.vut.cz/units/upgm/.en) - for borrowing me a Looking Glass display and ray generation
 - [3DApps](https://github.com/dormon/3DApps) - LG USB Calibration
-- [Scratchapixel article on rendering a triangle](https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle)
+- [Embree-style Möller-Trumbore ray-triangle intersection](https://www.shadertoy.com/view/llGSDD)
 - [Scene loading](https://github.com/assimp/assimp/blob/master/samples/SimpleTexturedOpenGL/SimpleTexturedOpenGL/src/model_loading.cpp) - assimp example
-- [Sponza glTF scene](https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/Sponza/glTF)
 - [Tutorial about bindless textures](https://sites.google.com/site/john87connor/indirect-rendering/2-a-using-bindless-textures?pli=1)

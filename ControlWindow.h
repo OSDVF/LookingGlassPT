@@ -11,8 +11,9 @@ template <size_t count>
 class ControlWindow : public AppWindow {
 public:
 	std::array<AppWindow*, count>& allWindows;
-	ControlWindow(std::array<AppWindow*, count>& allWindows, const char* name, float x, float y, float w, float h) :
-		AppWindow(name, x, y, w, h), allWindows(allWindows)
+	bool debug;
+	ControlWindow(std::array<AppWindow*, count>& allWindows, const char* name, float x, float y, float w, float h, bool debug) :
+		AppWindow(name, x, y, w, h), allWindows(allWindows), debug(debug)
 	{
 
 	}
@@ -27,13 +28,17 @@ public:
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
 		ImGui::SetNextWindowSize(ImVec2(windowWidth, windowHeight));
 		ImGui::Begin("Settings", 0, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);                          // Create a window called "Hello, world!" and append into it.
+		if (debug)
+		{
+			ImGui::Checkbox("GL Debug Output", &ProjectSettings::debugOutput);
+		}
 		if (ImGui::RadioButton("Looking Glass", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::LookingGlass))
 		{
-			ProjectSettings::changeScreenType = true;
+			ProjectSettings::applyScreenType = true;
 		}
 		if (ImGui::RadioButton("Flat", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::Flat))
 		{
-			ProjectSettings::changeScreenType = true;
+			ProjectSettings::applyScreenType = true;
 		}
 		bool cameraEdited = ImGui::SliderFloat("FOV", &ProjectSettings::fov, 30.f, 100.f);
 		cameraEdited = ImGui::SliderFloat("Near Plane", &ProjectSettings::nearPlane, 0.01f, 1) || cameraEdited;
@@ -104,6 +109,10 @@ public:
 			if (ImGui::BeginPopup(fileErrorDialog))
 			{
 				ImGui::TextWrapped("Error: %s", NFD_GetError());
+				if (ImGui::Button("Close"))
+				{
+					ImGui::CloseCurrentPopup();
+				}
 				ImGui::EndPopup();
 			}
 			if (logarithmicScale)
@@ -148,7 +157,6 @@ public:
 			int step = 1;
 			ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &ProjectSettings::objectCountLimit, &step);
 		}
-
 
 		ImGui::End();
 	}

@@ -64,7 +64,7 @@ int main(int argc, const char** argv)
 	IMGUI_CHECKVERSION();
 
 	std::array<AppWindow*, 2> windows = {
-	new ControlWindow(windows, "Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H),
+	new ControlWindow(windows, "Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H, debug),
 	new ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 2, forceFlat),
 	};
 
@@ -163,6 +163,18 @@ int main(int argc, const char** argv)
 					break;
 				}
 				break;
+			case SDL_MOUSEBUTTONDOWN:
+			case SDL_MOUSEBUTTONUP:
+				focusedWindow = event.button.windowID;
+				break;
+			case SDL_MOUSEMOTION:
+				focusedWindow = event.motion.windowID;
+				break;
+			case SDL_KEYDOWN:
+			case SDL_KEYUP:
+				focusedWindow = event.key.windowID;
+			case SDL_MOUSEWHEEL:
+				focusedWindow = event.wheel.windowID;
 			}
 		}
 		for (int i = 0; i < windows.size(); i++)
@@ -191,6 +203,7 @@ int main(int argc, const char** argv)
 				{
 					// Do working on an empty event
 					window->workOnEvent(event, deltaTime);
+					std::this_thread::yield();
 				}
 			}
 		}
@@ -219,6 +232,8 @@ void processEventsOnRender(std::deque<SDL_Event>& events, AppWindow*& window)
 	window->renderOnEvent(eventsCopy);
 	lck.lock();
 	events.clear();
+	// Manually add one more event for updating the ui after event processing
+	events.push_back(SDL_Event());
 }
 
 void destroyWindow(AppWindow* window)

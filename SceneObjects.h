@@ -9,7 +9,7 @@ inline std::string debugArray(const char* data, size_t len, bool fl) {
 	std::stringstream out;
 	if (fl)
 	{
-		for (size_t i = 0; i < len; i+=sizeof(float))
+		for (size_t i = 0; i < len; i += sizeof(float))
 		{
 			out << *(float*)&data[i] << ' ';
 		}
@@ -277,3 +277,25 @@ public:
 		return s;
 	}
 };
+
+struct FastTriangle {
+	glm::vec3 v0;
+	glm::vec3 edgeA;
+	glm::vec3 edgeB;
+	glm::vec3 normal;
+	glm::uvec4 indices;//Indices of other vertex attributes
+};
+
+FastTriangle toFast(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::uvec3 indices)
+{
+	glm::vec3 edgeA = v1 - v0;
+	glm::vec3 edgeB = v2 - v0;
+
+	return FastTriangle(
+		v0,
+		edgeA,
+		edgeB,
+		glm::cross(edgeA, edgeB),
+		glm::vec4(indices, 0)
+	);
+}

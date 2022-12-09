@@ -14,9 +14,9 @@ namespace ProjectSettings {
 	inline enum class ScreenType {
 		Flat = 0, LookingGlass = 1
 	} GlobalScreenType;
-	inline bool changeScreenType = false;
+	inline bool applyScreenType = false;
 	inline bool recompileFShaders = false;
-	inline bool reloadScene = true;
+	inline bool reloadScene = false;
 	inline struct {
 		std::filesystem::path path = "";
 		aiVector3D scale = { 1,1,1 };
@@ -24,4 +24,5 @@ namespace ProjectSettings {
 		aiVector3D rotationDeg ;
 	} scene;
 	inline int objectCountLimit = 2;
+	inline bool debugOutput = true;
 };

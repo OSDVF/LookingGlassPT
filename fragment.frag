@@ -36,7 +36,7 @@ uniform CalibrationBuffer {
 struct ObjectDefinition {
     uint material;
     uint vboStartIndex;
-    uint indexIndex;
+    uint firstTriangle;
     uint triNumber;
     uvec4 attrSizes;
 };
@@ -54,12 +54,29 @@ uniform vec2 uMouse = vec2(0.5,0.5);
 uniform float uViewCone = radians(20); // 40 deg in rad
 uniform float uFocusDistance = 10;
 
-layout(std430, binding = 2) readonly buffer VertexBuffer {
+layout(std430, binding = 2) readonly buffer AttributeBuffer {
     float[] dynamicVertexAttrs;
 };
 
-layout(std430, binding = 3) readonly buffer IndexBuffer {
-    uint[] dynamicIndices;//Points to attribute index, not vertex index
+struct Triangle {
+    vec3 v0;
+    float edgeAx;
+
+    float edgeAy;
+    float edgeAz;
+    float edgeBx;
+    float edgeBy;
+
+    float edgeBz;
+    float normalX;
+    float normalY;
+    float normalZ;
+
+    uvec4 attributeIndices;
+};
+
+layout(std430, binding = 3) readonly buffer TriangleBuffer {
+    Triangle[] triangles;
 };
 
 // Layout is one of these:
@@ -91,10 +108,6 @@ layout(std430, binding = 4) readonly buffer MaterialBuffer {
 
 uniform mat4 uView;
 uniform mat4 uProj;
-
-struct Triangle {
-    vec3 v0, edgeA, edgeB, n;
-};
 
 struct Ray {
     vec3 origin;
@@ -130,10 +143,13 @@ Light[1] lights = {
 const float pos_infinity = 100000.0;
 const float neg_infinity = uintBitsToFloat(0xFF800000);
 struct Hit {
-    uint object;
-    uint triIndex;
+    uint vboStartIndex;
+    uvec4 attrSizes;
+    uint totalAttrSize;
+    uint material;
     float rayT;
     vec2 barycentric;
+    uvec3 indices;
 };
 
 struct HitTest {
@@ -352,33 +368,84 @@ bool getRayObjectIntersection(AnalyticalObject object, Ray ray, out vec3 hitPosi
     }
 }
 
-bool intersectTriangle(in Ray r, in Triangle t, inout HitTest test) {
+// Extract the sign bit from a 32-bit floating point number.
+float signmsk(float x ){
+    return intBitsToFloat( floatBitsToInt(x) & 0x80000000 );
+}
+
+// Exclusive-or the bits of two floating point numbers together, interpreting
+// the result as another floating point number.
+float xorf(float x, float y)
+{
+    return intBitsToFloat( floatBitsToInt(x) ^ floatBitsToInt(y) );
+}
+
+const float tNear = 0.01;
+const float tFar = 1000;
+
+bool embreeIntersect(const Triangle tri, const Ray ray,
+    inout float T, out float U, out float V){
+    vec3 edgeA = vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz);
+    vec3 edgeB = vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz);
+    vec3 normal = vec3(tri.normalX,tri.normalY,tri.normalZ);
+    /*const float den = dot( normal, ray.direction );
+    if(den < 0.001)
+    {
+        //return false;
+    }
+    vec3 C = tri.v0 - ray.origin;
     
-    vec3 pvec = cross(r.direction, t.edgeB);
-    float det = dot(t.edgeA, pvec);
-    if ((det) < 0.001) return false;
+    vec3 R = cross(ray.direction, C);
+    
+    const float absDen = abs( den );
+    const float sgnDen = signmsk( den );
+    
+    // perform edge tests
+    U = xorf( dot( R, edgeB ), sgnDen );
+    if( U < 0)
+    {
+        return false;
+    }
+    V = xorf( dot( R, edgeA ), sgnDen );
+    if( V < 0)
+    {
+        return false;
+    }
+    
+    // No backface culling in this experiment
+    if ( U+V > absDen ) return false;
+    
+    // perform depth test
+    float newT = xorf( dot( normal, C ), sgnDen ) * absDen;
+    if(newT >= tNear && newT < T)
+    {
+        T = newT;
+        return true;
+    }
+    // These experiments don't build hit information, just indicate that ray intersected triangle
+    return false;*/
+    vec3 pvec = cross(ray.direction, edgeB);
+    float det = dot(edgeA, pvec);
+    if (abs(det) < 0.001) return false;
     
     float iDet = 1./det;
     
-    vec3 tvec = r.origin - t.v0;
-    float u = dot(tvec, pvec) * iDet;
-    float inside = step(0.0, u) * (1.-step(1.0, u));
+    vec3 tvec = ray.origin - tri.v0;
+    U = dot(tvec, pvec) * iDet;
+    float inside = step(0.0, U) * (1.-step(1.0, U));
     
-    vec3 qvec = cross(tvec, t.edgeA);
-    float v = dot(r.direction, qvec) * iDet;
-    inside *= step(0.0, v) * (1. - step(1., u+v));
+    vec3 qvec = cross(tvec, edgeA);
+    V = dot(ray.direction, qvec) * iDet;
+    inside *= step(0.0, V) * (1. - step(1., U+V));
     if (inside == 0.0) return false;
     
-    float d = dot(t.edgeB, qvec) * iDet;
+    float d = dot(edgeB, qvec) * iDet;
     
     float f = step(0.0, -d);
     d = d * (1.-f) + (f * pos_infinity);    
-    if (d > test.dist) { return false; }
+    if (d > T) { return false; }
     
-    test.dist = d;
-    test.normal = t.n * sign(det);//((s.n0 * u) + (s.n1 * v) + (s.n2 * (1. - (u + v)))) * -sign(a);
-    //test.val = vec3(u, v, 1. - (u+v));
-    
+    T = d;
     return true;
 }
 
@@ -576,45 +643,45 @@ vec3 baldwinRayTriIntersect( in vec3 ro, in vec3 rd,
     return vec3(t, u, v);
 }
  
- float interpolateAttribute(in ObjectDefinition obj, in Hit hit, in uint totalAttrSize,
-                            in uint currentAttrOffset)
+ float interpolateAttribute(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
+                            in uint currentAttrOffset, in uvec3 indices)
  {
     return dynamicVertexAttrs[
-            obj.vboStartIndex
-            + dynamicIndices[obj.indexIndex + hit.triIndex*3] * totalAttrSize
+            vboStartIndex
+            + indices.x * totalAttrSize
             + currentAttrOffset
-        ] * hit.barycentric.x +
+        ] * (1 - barycentric.x - barycentric.y) +
         dynamicVertexAttrs[
-            obj.vboStartIndex
-            + dynamicIndices[obj.indexIndex + hit.triIndex*3 + 1] * totalAttrSize
+            vboStartIndex
+            + indices.y * totalAttrSize
             + currentAttrOffset
-        ] * hit.barycentric.y +
+        ] * barycentric.x +
         dynamicVertexAttrs[
-            obj.vboStartIndex
-            + dynamicIndices[obj.indexIndex + hit.triIndex*3 + 2] * totalAttrSize
+            vboStartIndex
+            + indices.z * totalAttrSize
             + currentAttrOffset
-        ] * (1 - hit.barycentric.x - hit.barycentric.y);
+        ] * barycentric.y;
     
  }
 
-vec3 interpolate3(in ObjectDefinition obj, in Hit hit, in uint totalAttrSize,
-                    in uint currentAttrOffset)
+vec3 interpolate3(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
+                    in uint currentAttrOffset, uvec3 indices)
 {
     vec3 result;
     for(uint attrPart = 0; attrPart < 3; attrPart++)
     {
-        result[attrPart] = interpolateAttribute(obj, hit, totalAttrSize, currentAttrOffset + attrPart);
+        result[attrPart] = interpolateAttribute(vboStartIndex, barycentric, totalAttrSize, currentAttrOffset + attrPart, indices);
     }
     return result;
 }
 
-vec2 interpolate2(in ObjectDefinition obj, in Hit hit, in uint totalAttrSize,
-                    in uint currentAttrOffset)
+vec2 interpolate2(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
+                    in uint currentAttrOffset, in uvec3 indices)
 {
     vec2 result;
     for(uint attrPart = 0; attrPart < 2; attrPart++)
     {
-        result[attrPart] = interpolateAttribute(obj, hit, totalAttrSize, currentAttrOffset + attrPart);
+        result[attrPart] = interpolateAttribute(vboStartIndex, barycentric, totalAttrSize, currentAttrOffset + attrPart, indices);
     }
     return result;
 }
@@ -649,77 +716,64 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
     vec3 col;
     //float far = uProj[2].w / (uProj[2].z + 1.0);
     float far = 1000;
-    Hit closestHit = Hit(0, 0, far, vec2(0));
+    Hit closestHit;
+    closestHit.rayT = far;
     for (uint o = 0; o < uObjectCount; o++)
     {
         ObjectDefinition obj = objectDefinitions[o];
         uvec4 attrSizes = obj.attrSizes;
-
-        //Vertex pos is 3 floats wide, + other attrs
-        uint totalAttrSize = 3 + attrSizes.x+attrSizes.y+attrSizes.z+attrSizes.w;
+        uint totalAttrSize = attrSizes.x+attrSizes.y+attrSizes.z+attrSizes.w;
 
         // For each triangle
         for(uint i = 0; i < obj.triNumber; i++)
         {
-            vec3[3] triangle;//The first vertex attribute is always the position
-            for(uint vertInTri = 0; vertInTri < 3; vertInTri++)
-            {
-                // Pull vertices and construct a triangle
-                triangle[vertInTri] = vec3(
-                    dynamicVertexAttrs[obj.vboStartIndex + dynamicIndices[obj.indexIndex + i*3 + vertInTri] * totalAttrSize],
-                    dynamicVertexAttrs[obj.vboStartIndex + dynamicIndices[obj.indexIndex + i*3 + vertInTri] * totalAttrSize + 1],
-                    dynamicVertexAttrs[obj.vboStartIndex + dynamicIndices[obj.indexIndex + i*3 + vertInTri] * totalAttrSize + 2]
-                );
-            }
+            Triangle tri = triangles[obj.firstTriangle + i];
             float outT, outU, outV;
-            if(rayTriangleIntersect(ray.origin, ray.direction,
-                triangle[0],
-                triangle[1],
-                triangle[2],
-                outT, outU, outV))
+            if(embreeIntersect(
+                tri,
+                ray,
+                closestHit.rayT, outU, outV))
+            //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz), vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz) + tri.v0, outT, outU, outV))
             {
-                if(outT < closestHit.rayT)
-                {
-                    closestHit = Hit(o, i, outT, vec2(outU, outV));
-                }
+                closestHit.vboStartIndex = obj.vboStartIndex;
+                closestHit.attrSizes = obj.attrSizes;
+                closestHit.material = obj.material;
+                closestHit.totalAttrSize = totalAttrSize;
+                closestHit.barycentric = vec2(outV, outU);
+                closestHit.indices = tri.attributeIndices.xyz;
             }
         }
     }
     if(closestHit.rayT != far)
     {
-        ObjectDefinition obj = objectDefinitions[closestHit.object];
-        uvec4 attrSizes = obj.attrSizes;
-
-        //Vertex pos is 3 floats wide, + other attrs
-        uint totalAttrSize = 3 + attrSizes.x+attrSizes.y+attrSizes.z+attrSizes.w;
         // Interpolate other triangle attributes by barycentric coordinates
-        uint currentAttrOffset = 3;// skip first three values (vertex pos)
-        switch(attrSizes.x)
+        uint currentAttrOffset = 0;
+        switch(closestHit.attrSizes.x)
         {
             // Normals or colors or UVWs
             case 3:
-                vec3 normOrColor = interpolate3(obj, closestHit, totalAttrSize, currentAttrOffset);
+                vec3 normOrColor = interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
                 return normOrColor;
                 break;
             // UVs
             case 2:
-                vec2 uv = interpolate2(obj, closestHit, totalAttrSize, currentAttrOffset);
-                return getMaterialColor(obj.material, uv);
+                vec2 uv = interpolate2(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
+                return getMaterialColor(closestHit.material, uv);
                 break;
         }
-        currentAttrOffset += attrSizes.x;
-        switch(attrSizes.y)
+        currentAttrOffset += closestHit.attrSizes.x;
+        switch(closestHit.attrSizes.y)
         {
             // Normals or colors or UVWs
             case 3:
-                vec3 normOrColor = interpolate3(obj, closestHit, totalAttrSize, currentAttrOffset);
+                vec3 normOrColor = interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
                 break;
             // UVs
             case 2:
-                vec2 uv = interpolate2(obj, closestHit, totalAttrSize, currentAttrOffset);
+                vec2 uv = interpolate2(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
                 break;
         }
-        currentAttrOffset += attrSizes.y;
+        currentAttrOffset += closestHit.attrSizes.y;
     }
     vec3 outPos, outNorm;
     float outT;

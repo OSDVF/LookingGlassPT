@@ -1,4 +1,5 @@
 #include "AppWindow.h"
+#include "impl/sdl_event_to_string.h"
 
 AppWindow::AppWindow(const char* name, float x, float y, float w, float h)
 {
@@ -92,15 +93,21 @@ void AppWindow::flushRender()
 // Event handler on the rendering thread
 void AppWindow::renderOnEvent(std::deque<SDL_Event> events)
 {
+	beginFrame();
 	for (auto& event : events)
 	{
 		processImGuiEvent(event);
 	}
-	beginFrame();
 }
 
 void AppWindow::processImGuiEvent(SDL_Event& event)
 {
+#if DEBUG
+	if (event.type != SDL_FIRSTEVENT && event.type != SDL_POLLSENTINEL)
+	{
+		sdlEventToSdlLog(event);
+	}
+#endif
 	ImGui_ImplSDL2_ProcessEvent(&event);
 	switch (event.type)
 	{
