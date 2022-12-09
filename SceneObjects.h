@@ -278,6 +278,7 @@ public:
 	}
 };
 
+/// https://github.com/embree/embree/blob/master/kernels/geometry/triangle.h
 struct FastTriangle {
 	glm::vec3 v0;
 	glm::vec3 edgeA;
@@ -288,7 +289,7 @@ struct FastTriangle {
 
 FastTriangle toFast(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::uvec3 indices)
 {
-	glm::vec3 edgeA = v1 - v0;
+	glm::vec3 edgeA = v0 - v1;
 	glm::vec3 edgeB = v2 - v0;
 
 	return FastTriangle(

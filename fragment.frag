@@ -388,10 +388,10 @@ bool embreeIntersect(const Triangle tri, const Ray ray,
     vec3 edgeA = vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz);
     vec3 edgeB = vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz);
     vec3 normal = vec3(tri.normalX,tri.normalY,tri.normalZ);
-    /*const float den = dot( normal, ray.direction );
+    const float den = dot( normal, ray.direction );
     if(den < 0.001)
     {
-        //return false;
+        return false;
     }
     vec3 C = tri.v0 - ray.origin;
     
@@ -416,14 +416,17 @@ bool embreeIntersect(const Triangle tri, const Ray ray,
     if ( U+V > absDen ) return false;
     
     // perform depth test
-    float newT = xorf( dot( normal, C ), sgnDen ) * absDen;
+    float invDen = 1/absDen;
+    float newT = xorf( dot( normal, C ), sgnDen ) * invDen;
     if(newT >= tNear && newT < T)
     {
         T = newT;
+        U *= invDen;
+        V *= invDen;
         return true;
     }
     // These experiments don't build hit information, just indicate that ray intersected triangle
-    return false;*/
+    return false;
     vec3 pvec = cross(ray.direction, edgeB);
     float det = dot(edgeA, pvec);
     if (abs(det) < 0.001) return false;
@@ -551,97 +554,6 @@ bool rayTriangleIntersect(
     return true;  //this ray hits the triangle 
 #endif 
 } 
-
-vec3 baldwinRayTriIntersect( in vec3 ro, in vec3 rd,
-                             in vec3 A, in vec3 B, in vec3 C) {
-    
-    vec3 E1 = B - A;
-    vec3 E2 = C - A;
-    
-    vec3 n = cross(E1, E2);
-    
-    vec3 an = abs(n);
-  
-    // Vectors for each row of the matrix
-    vec4 tmat1, tmat2, tmat3;
-    float num = -dot(A, n);
-    
-    // Ideally, the matrix is only computed once and stored in memory
-    
-    // Compute world-to-baycentric transformation matrix
-    
-  #ifndef USE_BRANCHLESS
-    // Branching version
-    if (an.x > an.y && an.x > an.z)
-    {
-        tmat1 = vec4(0., E2.z, -E2.y,  C.y * A.z - C.z * A.y) / n.x;
-        tmat2 = vec4(0., -E1.z, E1.y, -B.y * A.z + B.z * A.y) / n.x;
-        tmat3 = vec4(n.xyz, num) / n.x;
-        
-    } else if (an.y > an.z)
-    {
-        tmat1 = vec4(-E2.z, 0., E2.x,  C.z * A.x - C.x * A.z) / n.y;
-        tmat2 = vec4(E1.z, 0., -E1.x, -B.z * A.x + B.x * A.z) / n.y;
-        tmat3 = vec4(n.xyz, num) / n.y;
-    } else if (an.z > 0.)
-    {
-        tmat1 = vec4(E2.y, -E2.x, 0.,  C.x * A.y - C.y * A.x) / n.z;
-        tmat2 = vec4(-E1.y, E1.x, 0., -B.x * A.y + B.y * A.x) / n.z;
-        tmat3 = vec4(n.xyz, num) / n.z;
-    }
-    
-  #else
-    // No branching using array syntax
-    
-    /*
-    int ni;
-    if (an.x > an.y && an.x > an.z)
-        ni = 0;
-    else if (an.y > an.z)
-        ni = 1;
-    else if (an.z > 0.)
-        ni = 2;
-    */
-    
-    // Same as above using step
-    vec3 nn = step(an.yzx, an.xyz) * step(an.zxy, an.xyz);
-    int ni = int( dot(nn, vec3(0,1,2)) );
-    
-    int n1 = (ni + 1) % 3;
-    int n2 = (ni + 2) % 3;
-    int n3 = (1 - ni) % 3;
-    int n4 = (2 - ni) % 3;
-    int n5 = (3 - ni) % 3;
-    
-    tmat1 = vec4(E2[n5], E2[n4], E2[n3],  C[n1] * A[n2] - C[n2] * A[n1]) / n[ni];
-    tmat2 = vec4(E1[n5], E1[n4], E1[n3], -B[n1] * A[n2] + B[n2] * A[n1]) / n[ni];
-    tmat3 = vec4(n.xyz, num) / n[ni];
-    
-    tmat1[ni] = 0.;
-    tmat2[ni] = 0.;
-    
-    tmat1[n2] *= -1.;
-    tmat2[n1] *= -1.;
-    
-  #endif
-    
-    float s = dot(vec4(ro, 1), tmat3);
-    float d = dot(vec4(rd, 0), tmat3);
-    
-    // Distance
-    float t = -s / d;
-    
-    vec4 pos = vec4(ro + rd*t, 1);
-    
-    // UV
-    float u = dot(pos, tmat1);
-    float v = dot(pos, tmat2);
-    
-    if (u < 0. || v < 0. || (u + v) > 1.)
-        t = -1.;
-    
-    return vec3(t, u, v);
-}
  
  float interpolateAttribute(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
                             in uint currentAttrOffset, in uvec3 indices)
@@ -739,7 +651,7 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
                 closestHit.attrSizes = obj.attrSizes;
                 closestHit.material = obj.material;
                 closestHit.totalAttrSize = totalAttrSize;
-                closestHit.barycentric = vec2(outV, outU);
+                closestHit.barycentric = vec2(outU, outV);
                 closestHit.indices = tri.attributeIndices.xyz;
             }
         }

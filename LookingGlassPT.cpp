@@ -103,7 +103,7 @@ int main(int argc, const char** argv)
 					{
 						if (window->eventDriven)
 						{
-							if (events.size() > 0)
+							if (events.size() > 1 || (events.size() > 0 && events.front().type != SDL_FIRSTEVENT))
 							{
 								window->setContext();
 								processEventsOnRender(events, window);
