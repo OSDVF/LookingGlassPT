@@ -7,7 +7,7 @@ namespace ProjectSettings {
 	inline float mouseX = 100;
 	inline float mouseY = 100;
 	inline float farPlane = 1000;
-	inline float nearPlane = 0.1;
+	inline float nearPlane = 0.1f;
 	inline float viewCone = 40;
 	inline float focusDistance = 2.f;
 	inline FirstPersonController person;

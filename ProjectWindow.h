@@ -166,7 +166,7 @@ public:
 		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
 		person.Camera.SetCenter(glm::vec2(windowWidth / 2, windowHeight / 2));
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-		loadTestScene();
+		//loadTestScene();
 		updateBuffers();
 	}
 	void createFlexibleBuffer(GLuint& bufferHandle, GLuint index, anyVector& buffer)
@@ -385,29 +385,29 @@ public:
 			glm::uvec3(0, 1, 2)
 		));
 		vertexAttrs.push({
-			glm::vec3{ 1,0,0 },//color
-			glm::vec3{ 0,1,0 },//color
-			glm::vec3{ 0,0,1 }//color
+			glm::vec4{ 1,0,0,1 },//color
+			glm::vec4{ 0,1,0,1 },//color
+			glm::vec4{ 0,0,1,1 }//color
 			}
 		);
 
 
-		objects.push_back(SceneObject{
+		objects.push_back(SceneObject(
 			0,//material
-				0,//VBO position in global vertex buffer
-				0,//first index index
-				1,//total triangles
-				glm::uvec4(3,0,0,0)//attribute sizes (does not include vertex pos, because it is implicit)
-			});
+			0,//VBO position in global vertex buffer
+			0,//first index index
+			1,//total triangles
+			true, false, false
+		));
 
 
-		materials.push(Material<color, color, color, color, color>{
-			{1.f, 1.f, 1.f},
-			{ 1.f,1.f,1.f },
-			{ 1.f,1.f,1.f },
-			{ 1.f,1.f,1.f },
-			{ 1.f,1.f,1.f }
-		});
+		materials.push(Material<color, color, color, color, color>(
+			{ 1.f, 1.f, 1.f, 1.f },
+			{ 1.f, 1.f, 1.f, 1.f },
+			{ 1.f, 1.f, 1.f, 1.f },
+			{ 1.f, 1.f, 1.f, 1.f },
+			{ 1.f, 1.f, 1.f, 1.f }
+		));
 
 		uint32_t vboCursor = vertexAttrs.totalSize / sizeof(float);
 		uint32_t triCursor = triangles.size();
@@ -431,7 +431,7 @@ public:
 				if ((int)j % 2 == 0)
 				{
 					vertexAttrs.push(
-						hsl2rgb(i / N, 1, j / M)
+						{ hsl2rgb(i / N, 1, j / M), 1.f }
 					);
 					vertices.push_back(onSubRing);
 					indices.push_back(index++);
@@ -443,7 +443,7 @@ public:
 				if (j == 0)
 				{
 					vertexAttrs.push(
-						hsl2rgb((i + 1) / N, 1, j / M)
+						{ hsl2rgb((i + 1) / N, 1, j / M), 1.f }
 					);
 					vertices.push_back(onPrevSubRing);
 					indices.push_back(index++);
@@ -455,7 +455,7 @@ public:
 				if ((int)j % 2 == 0)
 				{
 					vertexAttrs.push(
-						hsl2rgb((i + 1) / N, 1, (j + 2) / M)
+						{ hsl2rgb((i + 1) / N, 1, (j + 2) / M), 1.f }
 					);
 					vertices.push_back(onNextSubRing);
 
@@ -502,14 +502,14 @@ public:
 		}
 
 
-		objects.push_back(SceneObject
-			{//attribute sizes
-				0,//material
-				vboCursor,//VBO position in global vertex buffer
-				triCursor,//first index index
-				(uint32_t)indices.size() / 3,//total indices
-				glm::uvec4(3,0,0,0)//attribute sizes
-			}
+		objects.push_back(SceneObject(
+			//attribute sizes
+			0,//material
+			vboCursor,//VBO position in global vertex buffer
+			triCursor,//first index index
+			(uint32_t)indices.size() / 3,//total indices
+			true, false, false
+		)
 		);
 
 		//std::cout << vertices.debug(true).rdbuf();
@@ -667,7 +667,7 @@ public:
 				focal = !focal;
 				break;
 			case SDLK_ESCAPE:
-				return true;
+				hide();
 			case SDLK_f:
 				fullscreen = !fullscreen;
 				if (fullscreen)
@@ -967,7 +967,7 @@ public:
 			// create a handle for bindless texture shader
 			//14650633544276105767.jpg
 			materials.push(Material<textureHandle, color, color, color, color>(
-				texHandle, { 0,0,0 }, { 0,0,0 }, { 0,0,0 }, { 0,0,0 }
+				texHandle, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }
 				)
 			);
 		}
@@ -976,7 +976,7 @@ public:
 		{
 			//color4_to_float4(&diffuse, c);
 			materials.push(Material<color, color, color, color, color>(
-				{ diffuse.r ,diffuse.g, diffuse.b }, { 0,0,0 }, { 0,0,0 }, { 0,0,0 }, { 0,0,0 }
+				{ diffuse.r ,diffuse.g, diffuse.b, diffuse.a }, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }
 				)
 			);
 		}
@@ -1024,23 +1024,25 @@ public:
 			*/
 	}
 
-	std::size_t pushAttributes(const aiMesh* mesh, std::size_t& index, const aiMatrix4x4& transMat)
+	int getUvNum(const aiMesh* mesh)
 	{
 		//auto uvNum = mesh->GetNumUVChannels();
 		auto uvNum = mesh->HasTextureCoords(0) ? 1 : 0;
+		return uvNum;
+	}
 
-		std::size_t attrFloatsCount = 0;
+	void pushAttributes(const aiMesh* mesh, std::size_t& index, const aiMatrix4x4& transMat)
+	{
+		auto uvNum = getUvNum(mesh);
 		if (mesh->mNormals != nullptr)// If the mesh has vertex colors
 		{
 			auto norm = mesh->mNormals[index];
 			vertexAttrs.push(norm);
-			attrFloatsCount += 3;
 		}
 		for (unsigned int c = 0; c < mesh->GetNumColorChannels(); c++)
 		{
 			auto col = mesh->mColors[c][index];
 			vertexAttrs.push(col);
-			attrFloatsCount += 4;
 		}
 		for (unsigned int t = 0; t < uvNum; t++)
 		{
@@ -1051,10 +1053,8 @@ public:
 				auto tCor = mesh->mTextureCoords[t][index];
 				vertexAttrs.push(tCor.x);
 				vertexAttrs.push(tCor.y);
-				attrFloatsCount += 2;
 			}
 		}
-		return attrFloatsCount;
 	}
 
 	void SubmitScene(const struct aiScene* sc, const struct aiNode* nd = nullptr, aiMatrix4x4 parentTransform = aiMatrix4x4())
@@ -1064,15 +1064,6 @@ public:
 			nd = sc->mRootNode;
 		}
 		aiMatrix4x4 transMat = parentTransform * nd->mTransformation;
-
-		/*aiMatrix4x4 m2;
-		aiMatrix4x4::Scaling(aiVector3D(scale, scale, scale), m2);
-		m = m * m2;
-
-		// update transform
-		m.Transpose();
-		glPushMatrix();
-		glMultMatrixf((float*)&m);*/
 
 		// draw all meshes assigned to this node
 		for (auto n = (decltype(nd->mNumMeshes))0; n < nd->mNumMeshes; ++n)
@@ -1106,22 +1097,11 @@ public:
 				triangles.push_back(fastTri);
 			}
 
-			if (mesh->mNormals != nullptr)
-			{
-				objects.push_back(SceneObject(
-					materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,
-					glm::uvec4(3, 0, 0, 0)
-				)
-				);
-			}
-			else
-			{
-				objects.push_back(SceneObject(
-					materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,
-					glm::uvec4(2, 0, 0, 0)
-				)
-				);
-			}
+			objects.push_back(SceneObject(
+				materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,
+				mesh->HasVertexColors(0), mesh->HasNormals(), mesh->HasTextureCoords(0)
+			)
+			);
 
 			//SubmitMaterial(sc->mMaterials[mesh->mMaterialIndex]);
 		}

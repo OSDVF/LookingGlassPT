@@ -25,15 +25,13 @@ inline std::string debugArray(const char* data, size_t len, bool fl) {
 	return out.str();
 }
 
-struct color {
-	float r, g, b;
-};
+using color = glm::vec4;
 std::ostream& operator<<(std::ostream& os, const color& c)
 {
 	os << c.r << ',' << c.g << ',' << c.b;
 	return os;
 }
-typedef uint64_t textureHandle;
+using textureHandle = uint64_t;
 
 template <
 	typename albedoT,
@@ -146,7 +144,38 @@ struct SceneObject {
 	uint32_t vboStartIndex;
 	uint32_t indexIndex;
 	uint32_t triNumber;
-	glm::uvec4 attrSizes;
+	uint32_t vertexAttrsMask;
+	uint32_t totalAttrSize;
+
+	SceneObject(
+		uint32_t material,
+		uint32_t vboStartIndex,
+		uint32_t indexIndex,
+		uint32_t triNumber,
+		bool colors, bool normals, bool uvs) :
+		material(material),
+		vboStartIndex(vboStartIndex),
+		indexIndex(indexIndex),
+		triNumber(triNumber)
+	{
+		totalAttrSize = 0;
+		vertexAttrsMask = 0;
+		if (colors)
+		{
+			vertexAttrsMask |= 1;
+			totalAttrSize += 4;
+		}
+		if (normals)
+		{
+			vertexAttrsMask |= 2;
+			totalAttrSize += 3;
+		}
+		if (uvs)
+		{
+			vertexAttrsMask |= 4;
+			totalAttrSize += 2;
+		}
+	}
 };
 
 class anySized

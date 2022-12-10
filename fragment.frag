@@ -38,7 +38,8 @@ struct ObjectDefinition {
     uint vboStartIndex;
     uint firstTriangle;
     uint triNumber;
-    uvec4 attrSizes;
+    uint vertexAttrs;
+    uint totalAttrsSize;
 };
 
 layout(shared, binding = 1) uniform ObjectBuffer {
@@ -144,18 +145,12 @@ const float pos_infinity = 100000.0;
 const float neg_infinity = uintBitsToFloat(0xFF800000);
 struct Hit {
     uint vboStartIndex;
-    uvec4 attrSizes;
+    uint attrs;
     uint totalAttrSize;
     uint material;
     float rayT;
     vec2 barycentric;
     uvec3 indices;
-};
-
-struct HitTest {
-	float dist;
-    vec3 normal;
-	vec3 val;
 };
 
 int subpI;
@@ -633,8 +628,6 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
     for (uint o = 0; o < uObjectCount; o++)
     {
         ObjectDefinition obj = objectDefinitions[o];
-        uvec4 attrSizes = obj.attrSizes;
-        uint totalAttrSize = attrSizes.x+attrSizes.y+attrSizes.z+attrSizes.w;
 
         // For each triangle
         for(uint i = 0; i < obj.triNumber; i++)
@@ -648,9 +641,9 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
             //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz), vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz) + tri.v0, outT, outU, outV))
             {
                 closestHit.vboStartIndex = obj.vboStartIndex;
-                closestHit.attrSizes = obj.attrSizes;
+                closestHit.attrs = obj.vertexAttrs;
                 closestHit.material = obj.material;
-                closestHit.totalAttrSize = totalAttrSize;
+                closestHit.totalAttrSize = obj.totalAttrsSize;
                 closestHit.barycentric = vec2(outU, outV);
                 closestHit.indices = tri.attributeIndices.xyz;
             }
@@ -660,32 +653,25 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
     {
         // Interpolate other triangle attributes by barycentric coordinates
         uint currentAttrOffset = 0;
-        switch(closestHit.attrSizes.x)
+        if ((closestHit.attrs & 1u) != 0)
         {
-            // Normals or colors or UVWs
-            case 3:
-                vec3 normOrColor = interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
-                return normOrColor;
-                break;
-            // UVs
-            case 2:
-                vec2 uv = interpolate2(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
-                return getMaterialColor(closestHit.material, uv);
-                break;
+            //Has vertex colors
+            return interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
+            currentAttrOffset += 4;
         }
-        currentAttrOffset += closestHit.attrSizes.x;
-        switch(closestHit.attrSizes.y)
+        else if ((closestHit.attrs & 2u) != 0)
         {
-            // Normals or colors or UVWs
-            case 3:
-                vec3 normOrColor = interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
-                break;
-            // UVs
-            case 2:
-                vec2 uv = interpolate2(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
-                break;
+            // Has normals
+            return interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
+            currentAttrOffset += 3;
         }
-        currentAttrOffset += closestHit.attrSizes.y;
+        else if ((closestHit.attrs & 4u) != 0)
+        {
+            // Has uvs
+            vec2 uv = interpolate2(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
+            return getMaterialColor(closestHit.material, uv);
+            currentAttrOffset += 2;
+        }
     }
     vec3 outPos, outNorm;
     float outT;
