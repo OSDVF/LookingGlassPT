@@ -84,7 +84,6 @@ void AppWindow::flushRender()
 // Event handler on the rendering thread
 void AppWindow::renderOnEvent(std::deque<SDL_Event> events)
 {
-	beginFrame();
 	for (auto& event : events)
 	{
 		processImGuiEvent(event);

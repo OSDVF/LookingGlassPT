@@ -8,7 +8,9 @@
       "projectTarget": "",
       "name": "Launch",
       "currentDir": "${workspaceRoot}",
-      "args": [ "d" ]
+      "args": [
+        "d"
+      ]
     },
     {
       "type": "default",
@@ -31,8 +33,17 @@
       "name": "Flat Screen",
       "project": "CMakeLists.txt",
       "projectTarget": "LookingGlassPT.exe",
-      "args": [ "flat", "d" ],
+      "args": [
+        "flat",
+        "d"
+      ],
       "currentDir": "${workspaceRoot}"
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "LookingGlassPT.exe",
+      "name": "LookingGlassPT.exe"
     }
   ]
 }

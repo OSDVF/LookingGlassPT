@@ -18,6 +18,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <assimp/material.h>
 #include <assimp/DefaultLogger.hpp>
 #include <assimp/LogStream.hpp>
 
@@ -541,6 +542,7 @@ public:
 		render();
 	}
 
+	std::string textureErrors;
 	void ui()
 	{
 		const char* calibrationAlertText = "Calibration Warning";
@@ -581,11 +583,10 @@ public:
 
 			if (Import3DFromFile(ProjectSettings::scene.path))
 			{
-				if (true || LoadGLTextures(gScene))
-				{
-					SubmitScene(gScene, nullptr, aiMatrix4x4(scene.scale, aiQuaternion(scene.rotationDeg.x, scene.rotationDeg.y, scene.rotationDeg.z), scene.position));
-				}
-				else
+				//textureErrors = LoadGLTextures(gScene);
+				SubmitScene(gScene, nullptr, aiMatrix4x4(scene.scale, aiQuaternion(scene.rotationDeg.x, scene.rotationDeg.y, scene.rotationDeg.z), scene.position));
+
+				if (!textureErrors.empty())
 				{
 					ImGui::OpenPopup(textureLoadingFailed);
 					std::cerr << "Texture loading failed \n";
@@ -608,7 +609,7 @@ public:
 		}
 		if (ImGui::BeginPopup(textureLoadingFailed))
 		{
-			ImGui::TextWrapped("Encountered error when loading texture");
+			ImGui::TextWrapped(textureErrors.c_str());
 			if (ImGui::Button("Close"))
 			{
 				ImGui::CloseCurrentPopup();
@@ -807,38 +808,49 @@ public:
 		return true;
 	}
 
-	int LoadGLTextures(const aiScene* scene)
+	// Returns errors list
+	std::string LoadGLTextures(const aiScene* scene)
 	{
-		//freeTextureIds();
-
-		//ILboolean success;
-
-		/* Before calling ilInit() version should be checked. */
-		/*if (ilGetInteger(IL_VERSION_NUM) < IL_VERSION)
+		std::stringstream ss;
+		if (scene->HasTextures())
 		{
-			/// wrong DevIL version ///
-			std::string err_msg = "Wrong DevIL version. Old devil.dll in system32/SysWow64?";
-			char* cErr_msg = (char *) err_msg.c_str();
-			abortGLInit(cErr_msg);
-			return -1;
-		}*/
+			return "Support for meshes with embedded textures is not implemented yet.\n";
+		}
 
-		//ilInit(); /* Initialization of DevIL */
-
-		if (scene->HasTextures()) return 1;
-		//abortGLInit("Support for meshes with embedded textures is not implemented");
-
-	/* getTexture Filenames and Numb of Textures */
+		/* getTexture Filenames and Numb of Textures */
 		for (unsigned int m = 0; m < scene->mNumMaterials; m++)
 		{
 			int texIndex = 0;
 			aiReturn texFound = AI_SUCCESS;
 
 			aiString path;	// filename
-
-			while (texFound == AI_SUCCESS)
+			auto material = scene->mMaterials[m];
+#if _DEBUG
+			std::cout << "Material " << m << std::endl;
+			for (int i = 0; i < material->mNumProperties; i++)
 			{
-				texFound = scene->mMaterials[m]->GetTexture(aiTextureType_DIFFUSE, texIndex, &path);
+				auto prop = material->mProperties[i];
+				std::cout << "prop " << prop->mKey.C_Str() << "(semantic " << prop->mSemantic << ") data: ";
+				switch (prop->mType)
+				{
+				case aiPropertyTypeInfo::aiPTI_Float:
+					std::cout << *(float*)prop->mData;
+					break;
+				case aiPropertyTypeInfo::aiPTI_Double:
+					std::cout << *(double*)prop->mData;
+					break;
+				case aiPropertyTypeInfo::aiPTI_Integer:
+					std::cout << *(int*)prop->mData;
+					break;
+				case aiPropertyTypeInfo::aiPTI_String:
+					std::cout << std::string(prop->mData, prop->mDataLength);
+					break;
+				}
+				std::cout << std::endl;
+			}
+#endif
+			while ((material->GetTexture(aiTextureType_DIFFUSE, texIndex, &path)) == AI_SUCCESS)
+			{
 				textureHandleMap.emplace(path.data, std::make_tuple(
 					std::reference_wrapper(invalidHandle), GLuint64(-1)
 				)); //fill map with texture paths, handles are still pseudo-NULL yet
@@ -847,14 +859,6 @@ public:
 		}
 
 		const size_t numTextures = textureHandleMap.size();
-
-
-		/* array with DevIL image IDs */
-		//ILuint* imageIds = NULL;
-	//	imageIds = new ILuint[numTextures];
-
-		/* generate DevIL Image IDs */
-	//	ilGenImages(numTextures, imageIds); /* Generation of numTextures image names */
 
 		///
 		/// Create and fill array with GL texture names
@@ -876,37 +880,35 @@ public:
 			std::filesystem::path fileloc = sceneDir / filename;	/* Loading of image */
 			//success = ilLoadImage(fileloc.c_str());
 			int w, h, channelsCount;
-			GLenum format;
-			GLint internalFormat;
+			GLenum format = 0;
+			GLint internalFormat = 0;
 			unsigned char* data = stbi_load(fileloc.string().c_str(), &w, &h, &channelsCount, STBI_rgb_alpha);
 
-			if (channelsCount == 4) {
+			switch (channelsCount)
+			{
+			case 4:
 				format = GL_RGBA;
 				internalFormat = GL_COMPRESSED_RGBA;
-			}
-			if (channelsCount == 3) {
+				break;
+			case 3:
 				format = GL_RGB;
 				internalFormat = GL_COMPRESSED_RGB;
-			}
-			if (channelsCount == 2) {
+				break;
+			case 2:
 				format = GL_RG;
 				internalFormat = GL_COMPRESSED_RG;
-			}
-			if (channelsCount == 1) {
+				break;
+			case 1:
 				format = GL_RED;
 				internalFormat = GL_COMPRESSED_RED;
+				break;
+			default:
+				ss << "Texture " << i << " has unsupported channel count of " << channelsCount << ".\n";
+				continue;
 			}
 
 			if (nullptr != data)
 			{
-				// Convert every colour component into unsigned byte.If your image contains
-				// alpha channel you can replace IL_RGB with IL_RGBA
-				//success = ilConvertImage(IL_RGB, IL_UNSIGNED_BYTE);
-				/*if (!success)
-				{
-					abortGLInit("Couldn't convert image");
-					return -1;
-				}*/
 				// Binding of texture name
 				auto& currentTex = textureIds[i];
 				// redefine standard texture values
@@ -929,18 +931,17 @@ public:
 			}
 			else
 			{
-				/* Error occurred */
-				std::cerr << "Couldn't load Image: " << fileloc << std::endl;
+				// Error occurred
+				if (ss.rdbuf()->in_avail() == 0)
+				{
+					//is still empty
+					ss << "Encountered error(s) when loading texture(s):" << std::endl;
+				}
+				ss << "Couldn't load Image: " << fileloc << std::endl;
 			}
 		}
-		// Because we have already copied image data into texture data  we can release memory used by image.
-	//	ilDeleteImages(numTextures, imageIds);
-
-		// Cleanup
-		//delete [] imageIds;
-		//imageIds = NULL;
-
-		return TRUE;
+		std::cerr << ss.rdbuf();
+		return ss.str();
 	}
 
 	void SubmitMaterial(const aiMaterial* mtl)
@@ -961,11 +962,15 @@ public:
 		if (AI_SUCCESS == mtl->GetTexture(aiTextureType_DIFFUSE, texIndex, &texPath))
 		{
 			//bind texture
+			if (!textureHandleMap.contains(texPath.data))
+			{
+				std::cerr << "Material " << mtl->GetName().C_Str() << " needs texture " << texPath.C_Str() << " but it wasn't loaded properly." << std::endl;
+				return;
+			}
 			auto& handles = textureHandleMap.at(texPath.data);
 			auto& texId = std::get<0>(handles);
 			auto& texHandle = std::get<1>(handles);
 			// create a handle for bindless texture shader
-			//14650633544276105767.jpg
 			materials.push(Material<textureHandle, color, color, color, color>(
 				texHandle, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }
 				)
@@ -1103,7 +1108,7 @@ public:
 			)
 			);
 
-			//SubmitMaterial(sc->mMaterials[mesh->mMaterialIndex]);
+			SubmitMaterial(sc->mMaterials[mesh->mMaterialIndex]);
 		}
 
 		// draw all children

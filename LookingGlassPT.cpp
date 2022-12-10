@@ -12,6 +12,7 @@
 #include <imgui.h>
 #include "impl/imgui_impl_opengl3.h"
 #include "impl/imgui_impl_sdl.h"
+#include "impl/sdl_event_to_string.h"
 #include "imgui_internal.h"
 #include "ControlWindow.h"
 #include "ProjectWindow.h"
@@ -22,6 +23,8 @@
 #define WINDOW_H 480
 
 std::mutex queMut;
+std::mutex powerSaveMut;
+std::condition_variable renderWait;
 int main(int argc, const char** argv)
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
@@ -103,11 +106,24 @@ int main(int argc, const char** argv)
 					{
 						if (window->eventDriven)
 						{
-							if (events.size() > 1 || (events.size() > 0 && events.front().type != SDL_FIRSTEVENT))
+							if (events.size())
 							{
+								// Process events
 								window->setContext();
+								window->beginFrame();
 								processEventsOnRender(events, window);
 								window->flushRender();
+
+								// Render once more with empty event to update the UI
+								window->setContext();
+								window->beginFrame();
+								window->renderOnEvent(events);
+								window->flushRender();
+							}
+							else
+							{
+								std::unique_lock lk(powerSaveMut);
+								renderWait.wait(lk);
 							}
 						}
 						else
@@ -141,10 +157,20 @@ int main(int argc, const char** argv)
 		{
 			if (window != nullptr)
 			{
-				eventDriven = eventDriven && window->eventDriven;
+				eventDriven = eventDriven && (window->eventDriven || window->hidden);
 			}
 		}
-		bool hasEvent = eventDriven ? SDL_WaitEvent(&event) : SDL_PollEvent(&event);
+		bool hasEvent;
+		if (eventDriven)
+		{
+			hasEvent = SDL_WaitEvent(&event);
+			renderWait.notify_all();
+		}
+		else
+		{
+			hasEvent = SDL_PollEvent(&event);
+		}
+
 		auto now = SDL_GetPerformanceCounter();
 		float deltaTime = 1000 * ((now - lastTime) / (float)SDL_GetPerformanceFrequency());
 		lastTime = now;
@@ -190,7 +216,7 @@ int main(int argc, const char** argv)
 						try
 						{
 							std::unique_lock lck(queMut);
-							eventQueues[i].push_back(event);
+							eventQueues[i].push_front(event);
 						}
 						catch (std::exception)
 						{
@@ -232,8 +258,6 @@ void processEventsOnRender(std::deque<SDL_Event>& events, AppWindow*& window)
 	window->renderOnEvent(eventsCopy);
 	lck.lock();
 	events.clear();
-	// Manually add one more event for updating the ui after event processing
-	events.push_back(SDL_Event());
 }
 
 void destroyWindow(AppWindow* window)
