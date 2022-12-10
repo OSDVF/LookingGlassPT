@@ -1,4 +1,5 @@
 #include "GlHelpers.h"
+#include "Settings.h"
 #include <boost/stacktrace.hpp>
 
 namespace GlHelpers {
@@ -11,49 +12,52 @@ namespace GlHelpers {
 			const GLchar* message,
 			const void* userParam)
 	{
-		switch (type) {
-		case GL_DEBUG_TYPE_ERROR:
-			std::cerr << "ERROR";
-			break;
-		case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
-			std::cerr << "DEPRECATED_BEHAVIOR";
-			break;
-		case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
-			std::cerr << "UNDEFINED_BEHAVIOR";
-			break;
-		case GL_DEBUG_TYPE_PORTABILITY:
-			std::cerr << "PORTABILITY";
-			break;
-		case GL_DEBUG_TYPE_PERFORMANCE:
-			std::cerr << "PERFORMANCE";
-			break;
-		case GL_DEBUG_TYPE_OTHER:
-			std::cerr << "OTHER";
-			break;
-		}
-		std::cerr << " (severity ";
-		switch (severity) {
-		case GL_DEBUG_SEVERITY_NOTIFICATION:
-			std::cerr << "NOTIFICATION";
-			break;
-		case GL_DEBUG_SEVERITY_LOW:
-			std::cerr << "LOW";
-			break;
-		case GL_DEBUG_SEVERITY_MEDIUM:
-			std::cerr << "MEDIUM";
-			break;
-		case GL_DEBUG_SEVERITY_HIGH:
-			std::cerr << "HIGH";
-			break;
-		}
-		
-		std::cerr << "): " << message << std::endl;
-#ifdef _DEBUG
-		if (type == GL_DEBUG_TYPE_ERROR)
+		if (severity >= ProjectSettings::debugOutput)
 		{
-			std::cerr << boost::stacktrace::stacktrace() << std::endl;
-		}
+			switch (type) {
+			case GL_DEBUG_TYPE_ERROR:
+				std::cerr << "ERROR";
+				break;
+			case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
+				std::cerr << "DEPRECATED_BEHAVIOR";
+				break;
+			case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
+				std::cerr << "UNDEFINED_BEHAVIOR";
+				break;
+			case GL_DEBUG_TYPE_PORTABILITY:
+				std::cerr << "PORTABILITY";
+				break;
+			case GL_DEBUG_TYPE_PERFORMANCE:
+				std::cerr << "PERFORMANCE";
+				break;
+			case GL_DEBUG_TYPE_OTHER:
+				std::cerr << "OTHER";
+				break;
+			}
+			std::cerr << " (severity ";
+			switch (severity) {
+			case GL_DEBUG_SEVERITY_NOTIFICATION:
+				std::cerr << "NOTIFICATION";
+				break;
+			case GL_DEBUG_SEVERITY_LOW:
+				std::cerr << "LOW";
+				break;
+			case GL_DEBUG_SEVERITY_MEDIUM:
+				std::cerr << "MEDIUM";
+				break;
+			case GL_DEBUG_SEVERITY_HIGH:
+				std::cerr << "HIGH";
+				break;
+			}
+
+			std::cerr << "): " << message << std::endl;
+#ifdef _DEBUG
+			if (type == GL_DEBUG_TYPE_ERROR)
+			{
+				std::cerr << boost::stacktrace::stacktrace() << std::endl;
+			}
 #endif
+		}
 	}
 
 	void initCallback()

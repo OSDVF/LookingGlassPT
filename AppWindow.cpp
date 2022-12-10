@@ -76,18 +76,9 @@ void AppWindow::beginFrame()
 
 void AppWindow::flushRender()
 {
-	bool debug = glIsEnabled(GL_DEBUG_OUTPUT);
-	if (debug)
-	{
-		glDisable(GL_DEBUG_OUTPUT);
-	}
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 	SDL_GL_SwapWindow(window);
-	if (debug)
-	{
-		glEnable(GL_DEBUG_OUTPUT);
-	}
 }
 
 // Event handler on the rendering thread

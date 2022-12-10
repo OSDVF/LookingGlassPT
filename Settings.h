@@ -24,5 +24,5 @@ namespace ProjectSettings {
 		aiVector3D rotationDeg ;
 	} scene;
 	inline int objectCountLimit = 2;
-	inline bool debugOutput = true;
+	inline GLenum debugOutput = GL_DEBUG_SEVERITY_LOW;
 };

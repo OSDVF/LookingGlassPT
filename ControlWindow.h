@@ -30,7 +30,39 @@ public:
 		ImGui::Begin("Settings", 0, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);                          // Create a window called "Hello, world!" and append into it.
 		if (debug)
 		{
-			ImGui::Checkbox("GL Debug Output", &ProjectSettings::debugOutput);
+			const char* const severities[] = {
+				"Everything",
+				"Low or higher",
+				"Medium or high",
+				"High",
+				"None"
+			};
+			int level;
+			switch (ProjectSettings::debugOutput)
+			{
+			case GL_DEBUG_SEVERITY_NOTIFICATION:
+				level = 0;
+				break;
+			case GL_DEBUG_SEVERITY_LOW:
+				level = 1;
+				break;
+			case GL_DEBUG_SEVERITY_MEDIUM:
+				level = 2;
+				break;
+			case GL_DEBUG_SEVERITY_HIGH:
+				level = 3;
+				break;
+			default:
+				level = 4;
+			}
+			ImGui::Combo("GL Debug Level", &level, severities, 5);
+			GLenum indexToSeverity[] = { GL_DEBUG_SEVERITY_NOTIFICATION,
+				GL_DEBUG_SEVERITY_LOW,
+				GL_DEBUG_SEVERITY_MEDIUM,
+				GL_DEBUG_SEVERITY_HIGH,
+				GL_DEBUG_SEVERITY_LOW + 1
+			};
+			ProjectSettings::debugOutput = indexToSeverity[level];
 		}
 		if (ImGui::RadioButton("Looking Glass", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::LookingGlass))
 		{
