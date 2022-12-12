@@ -25,6 +25,7 @@
 std::mutex queMut;
 std::mutex powerSaveMut;
 std::condition_variable renderWait;
+bool wholeAppPowerSave = false;
 int main(int argc, const char** argv)
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
@@ -120,7 +121,7 @@ int main(int argc, const char** argv)
 								window->renderOnEvent(events);
 								window->flushRender();
 							}
-							else
+							else if(wholeAppPowerSave)
 							{
 								std::unique_lock lk(powerSaveMut);
 								renderWait.wait(lk);
@@ -152,16 +153,17 @@ int main(int argc, const char** argv)
 	{
 
 		SDL_Event event;
-		bool eventDriven = true;
+		bool tempPowerSaveResult = true;
 		for (auto& window : windows)
 		{
 			if (window != nullptr)
 			{
-				eventDriven = eventDriven && (window->eventDriven || window->hidden);
+				tempPowerSaveResult = tempPowerSaveResult && (window->eventDriven || window->hidden);
 			}
 		}
+		wholeAppPowerSave = tempPowerSaveResult;
 		bool hasEvent;
-		if (eventDriven)
+		if (wholeAppPowerSave)
 		{
 			hasEvent = SDL_WaitEvent(&event);
 			renderWait.notify_all();
@@ -232,9 +234,10 @@ int main(int argc, const char** argv)
 					std::this_thread::yield();
 				}
 			}
-		}
-	}
+		}// for all windows
+	}// while (!exit)
 
+	renderWait.notify_all();
 	renderThread.join();
 
 	atexit(SDL_Quit);

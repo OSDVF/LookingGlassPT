@@ -76,33 +76,19 @@ struct Triangle {
     uvec4 attributeIndices;
 };
 
+struct Material {
+    uint isTexture;
+    uvec2 samplerOrColorRG;
+    float colorB;
+};
+
 layout(std430, binding = 3) readonly buffer TriangleBuffer {
     Triangle[] triangles;
 };
 
-// Layout is one of these:
-//struct Material {
-//    uint textureValuesMask;
-//    vec3 albedo;
-//    vec3 roughness;
-//    vec3 metallness;
-//    vec3 emmision;
-//    vec3 occlussion;
-//}; // 60 bytes
-//
-//struct TextureMaterial {
-//    uint textureValuesMask;
-//    uint64 albedo;
-//    uint64 roughness;
-//    uint64 metallness;
-//    uint64 emmision;
-//    uint64 occlussion;
-//}; // 40 bytes
-// Or a combination according to the bit mask
-
 // The layout is actually dynamically constructed
 layout(std430, binding = 4) readonly buffer MaterialBuffer {
-    uint[] materials;
+    Material[] materials;
 };
 
 //TODO vyzkoušet jiné typy projekce, které budou generovat ménì artefaktù
@@ -151,6 +137,7 @@ struct Hit {
     float rayT;
     vec2 barycentric;
     uvec3 indices;
+    vec3 normal;
 };
 
 int subpI;
@@ -377,12 +364,13 @@ float xorf(float x, float y)
 
 const float tNear = 0.01;
 const float tFar = 1000;
-
+#define MAGIC
 bool embreeIntersect(const Triangle tri, const Ray ray,
     inout float T, out float U, out float V){
     vec3 edgeA = vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz);
     vec3 edgeB = vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz);
     vec3 normal = vec3(tri.normalX,tri.normalY,tri.normalZ);
+    #ifdef MAGIC
     const float den = dot( normal, ray.direction );
     if(den < 0.001)
     {
@@ -420,8 +408,8 @@ bool embreeIntersect(const Triangle tri, const Ray ray,
         V *= invDen;
         return true;
     }
-    // These experiments don't build hit information, just indicate that ray intersected triangle
     return false;
+    #else
     vec3 pvec = cross(ray.direction, edgeB);
     float det = dot(edgeA, pvec);
     if (abs(det) < 0.001) return false;
@@ -445,11 +433,12 @@ bool embreeIntersect(const Triangle tri, const Ray ray,
     
     T = d;
     return true;
+    #endif
 }
 
 
 //#define MOLLER_TRUMBORE
-#define CULLING
+//#define CULLING
 const float kEpsilon = 1e-8; 
 bool rayTriangleIntersect( 
     const vec3 orig, const vec3 dir, 
@@ -514,10 +503,11 @@ bool rayTriangleIntersect(
     float d = -dot(N,v0); 
  
     // compute t (equation 3)
-    t = -(dot(N, orig) + d) / NdotRayDirection; 
+    float newT = -(dot(N, orig) + d) / NdotRayDirection; 
  
     // check if the triangle is in behind the ray
-    if (t < 0) return false;  //the triangle is behind 
+    if (newT < 0 || newT > t) return false;  //the triangle is behind 
+    t = newT;
  
     // compute the intersection point using equation 1
     vec3 P = orig + t * dir; 
@@ -582,6 +572,17 @@ vec3 interpolate3(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrS
     return result;
 }
 
+vec4 interpolate4(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
+                    in uint currentAttrOffset, uvec3 indices)
+{
+    vec4 result;
+    for(uint attrPart = 0; attrPart < 4; attrPart++)
+    {
+        result[attrPart] = interpolateAttribute(vboStartIndex, barycentric, totalAttrSize, currentAttrOffset + attrPart, indices);
+    }
+    return result;
+}
+
 vec2 interpolate2(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
                     in uint currentAttrOffset, in uvec3 indices)
 {
@@ -592,23 +593,25 @@ vec2 interpolate2(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrS
     }
     return result;
 }
-
+//#define DEBUG
 vec3 getMaterialColor(uint materialIndex, vec2 uv)
 {
     vec3 color;
-    uint meaningMask = materials[materialIndex];
-    if((meaningMask & 1) == 1)
+#ifdef DEBUG
+    return vec3(uv, 0);
+#endif
+    Material mat = materials[materialIndex];
+    if(mat.isTexture == 1)
     {
         // This is effectively uint64_t
-        uvec2 albedoTexture = uvec2(materials[materialIndex+2], materials[materialIndex+1]);
+        sampler2D samp = sampler2D(mat.samplerOrColorRG);
         // Return a color from a bindless texture
-        return texture2D(sampler2D(albedoTexture), uv).xyz;
+        uv.y = 1 - uv.y; // UVs are flipped for some reason
+        return texture(samp, uv).xyz;
     }
     else
     {
-        return vec3(uintBitsToFloat(materials[materialIndex+1]),
-                    uintBitsToFloat(materials[materialIndex+2]),
-                    uintBitsToFloat(materials[materialIndex+3]));
+        return vec3(uintBitsToFloat(mat.samplerOrColorRG), mat.colorB);
     }
     return vec3(1);
 }
@@ -638,14 +641,15 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
                 tri,
                 ray,
                 closestHit.rayT, outU, outV))
-            //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz), vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz) + tri.v0, outT, outU, outV))
+            //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz), vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz) + tri.v0, outT, outV, outU))
             {
                 closestHit.vboStartIndex = obj.vboStartIndex;
                 closestHit.attrs = obj.vertexAttrs;
                 closestHit.material = obj.material;
                 closestHit.totalAttrSize = obj.totalAttrsSize;
-                closestHit.barycentric = vec2(outU, outV);
+                closestHit.barycentric = vec2(outV, outU);
                 closestHit.indices = tri.attributeIndices.xyz;
+                closestHit.normal = vec3(tri.normalX, tri.normalY, tri.normalZ);
             }
         }
     }
@@ -653,25 +657,29 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
     {
         // Interpolate other triangle attributes by barycentric coordinates
         uint currentAttrOffset = 0;
+        vec3 surfaceNormal = normalize(closestHit.normal);
+        vec3 materialColor = vec3(1., 1., 1.);
+        vec4 vertexColor = vec4(1., 1., 1., 0.);
         if ((closestHit.attrs & 1u) != 0)
         {
             //Has vertex colors
-            return interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
+            vertexColor = interpolate4(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
             currentAttrOffset += 4;
         }
-        else if ((closestHit.attrs & 2u) != 0)
+        if ((closestHit.attrs & 2u) != 0)
         {
             // Has normals
-            return interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
+            surfaceNormal = interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
             currentAttrOffset += 3;
         }
-        else if ((closestHit.attrs & 4u) != 0)
+        if ((closestHit.attrs & 4u) != 0)
         {
             // Has uvs
             vec2 uv = interpolate2(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
             return getMaterialColor(closestHit.material, uv);
             currentAttrOffset += 2;
         }
+        return vec3(vertexColor);
     }
     vec3 outPos, outNorm;
     float outT;
@@ -679,7 +687,7 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
     {
         return outNorm * 0.5 + 0.5;
     }
-    return vec3(0);
+    return vec3(0.1);
 
     // gamma correction	
 	col = pow( col, vec3(0.4545) );

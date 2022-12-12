@@ -6,6 +6,8 @@
 #include <array>
 #include <nfd.h>
 
+#define DEBUG_SEVERITY_NOTHING GL_DEBUG_SEVERITY_LOW + 1
+
 // This window is 'lazy' or power-saving, so it doesn't have a draw() method
 template <size_t count>
 class ControlWindow : public AppWindow {
@@ -15,7 +17,10 @@ public:
 	ControlWindow(std::array<AppWindow*, count>& allWindows, const char* name, float x, float y, float w, float h, bool debug) :
 		AppWindow(name, x, y, w, h), allWindows(allWindows), debug(debug)
 	{
-
+		if (!debug)
+		{
+			ProjectSettings::debugOutput = DEBUG_SEVERITY_NOTHING;
+		}
 	}
 
 	bool logarithmicScale = true;
@@ -60,7 +65,7 @@ public:
 				GL_DEBUG_SEVERITY_LOW,
 				GL_DEBUG_SEVERITY_MEDIUM,
 				GL_DEBUG_SEVERITY_HIGH,
-				GL_DEBUG_SEVERITY_LOW + 1
+				DEBUG_SEVERITY_NOTHING
 			};
 			ProjectSettings::debugOutput = indexToSeverity[level];
 		}

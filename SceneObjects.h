@@ -28,7 +28,7 @@ inline std::string debugArray(const char* data, size_t len, bool fl) {
 using color = glm::vec4;
 std::ostream& operator<<(std::ostream& os, const color& c)
 {
-	os << c.r << ',' << c.g << ',' << c.b;
+	os << c.r << ',' << c.g << ',' << c.b << ',' << c.a;
 	return os;
 }
 using textureHandle = uint64_t;
@@ -40,7 +40,7 @@ template <
 	typename emmisionT,
 	typename occlussionT
 >
-struct Material {
+struct DynamicMaterial {
 	const uint32_t textureTypesMask =
 		(
 			((std::is_same<albedoT, color>::value ? 0 : 1) << 0)
@@ -58,7 +58,7 @@ struct Material {
 	metallnessT metallness;
 	emmisionT emmision;
 	occlussionT occlussion;
-	Material(albedoT albedo,
+	DynamicMaterial(albedoT albedo,
 		roughnessT roughness,
 		metallnessT metallness,
 		emmisionT emmision,
@@ -84,6 +84,27 @@ struct Material {
 		return s;
 	}
 };
+
+struct Material {
+	uint32_t isTexture;
+	glm::vec3 colorOrHandle;
+
+	Material(glm::uint64 handle)
+	{
+		isTexture = 1;
+		this->colorOrHandle = glm::vec3(
+			glm::uintBitsToFloat((handle >> 4u) & 0xFFFFFFFFu),
+			glm::uintBitsToFloat(handle & 0xFFFFFFFFu), 0.f
+		);
+	}
+
+	Material(glm::vec3 color)
+	{
+		isTexture = 0;
+		this->colorOrHandle = color;
+	}
+};
+
 template<uint32_t... Items>
 struct StaticLinkedList;
 
@@ -298,6 +319,34 @@ public:
 			s << i << ": " << type.type.name() << std::endl;
 			s << debugArray(buffer.view().data() + offset, type.size, fl) << std::endl;
 			//s << ((Printable*)buffer.view().substr(offset, type.size).data())->to_print().rdbuf();
+			s << "(" << type.size << " bytes)" << std::endl;
+			i++;
+			offset += type.size;
+		}
+		s << std::endl;
+		return s;
+	}
+
+	std::stringstream debug(std::initializer_list<std::pair<std::size_t, bool>> subSizes)
+	{
+		std::stringstream s;
+		std::size_t i = 0;
+		std::size_t offset = 0;
+		for (auto& type : types)
+		{
+			s << i << ": " << type.type.name() << std::endl;
+			std::size_t subOffset = 0;
+			for (auto& subItem : subSizes)
+			{
+				s << "subitem at " << subOffset << " of size " << subItem.first << std::endl;
+				s << debugArray(buffer.view().data() + offset + subOffset, subItem.first, subItem.second) << std::endl;
+				subOffset += subItem.first;
+			}
+			if (subOffset != type.size)
+			{
+				s << "remaining:\n";
+			}
+			s << debugArray(buffer.view().data() + offset + subOffset, type.size - subOffset, false) << std::endl;
 			s << "(" << type.size << " bytes)" << std::endl;
 			i++;
 			offset += type.size;

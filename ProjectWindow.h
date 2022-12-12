@@ -69,22 +69,18 @@ public:
 	anyVector vertexAttrs;
 	std::vector<FastTriangle> triangles;
 	std::vector<SceneObject> objects;
-	anyVector materials;
+	std::vector<Material> materials;
 
-	/*anyVector materials{
-		Material<textureHandle, textureHandle, textureHandle, textureHandle, textureHandle>{
-			0,1,2,3,4
-	}
-	};*/
-
-	// the global Assimp scene object
+	//
+	// Asset Import Library Objects
+	//
 	const aiScene* gScene = nullptr;
+	Assimp::Importer importer;
 	// images / texture
 	std::unordered_map<std::string, std::tuple<std::reference_wrapper<GLuint>, GLuint64>> textureHandleMap;	// map image filenames to textureIds and resident handles
 	std::vector<GLuint> textureIds;
 	GLuint invalidHandle = -1u;
-	// Create an instance of the Importer class
-	Assimp::Importer importer;
+	std::unordered_map<int, uint32_t> sceneMaterialIndices;
 
 	ProjectWindow(const char* name, float x, float y, float w, float h, bool forceFlat = false)
 		: AppWindow(name, x, y, w, h)
@@ -107,7 +103,10 @@ public:
 	void setupGL() override
 	{
 		AppWindow::setupGL();
-		GlHelpers::initCallback();
+		if (ProjectSettings::debugOutput != DEBUG_SEVERITY_NOTHING)
+		{
+			GlHelpers::initCallback();
+		}
 
 		program = glCreateProgram();
 		GlHelpers::compileShader<GL_VERTEX_SHADER>(Helpers::relativeToExecutable("vertex.vert").string(), vShader, {});
@@ -155,7 +154,11 @@ public:
 		glBufferData(GL_SHADER_STORAGE_BUFFER, triangles.size() * sizeof(FastTriangle), triangles.data(), GL_STATIC_READ);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Triangles.location, bufferHandles.triangles);
 
-		createFlexibleBuffer(bufferHandles.material, shaderInputs.Material.location, materials);
+
+		glGenBuffers(1, &bufferHandles.material);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.material);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, materials.size() * sizeof(Material), materials.data(), GL_STATIC_READ);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Material.location, bufferHandles.material);
 
 		glBindVertexArray(fullScreenVAO);
 		glUniform1f(shaderInputs.uTime, 0);
@@ -402,13 +405,7 @@ public:
 		));
 
 
-		materials.push(Material<color, color, color, color, color>(
-			{ 1.f, 1.f, 1.f, 1.f },
-			{ 1.f, 1.f, 1.f, 1.f },
-			{ 1.f, 1.f, 1.f, 1.f },
-			{ 1.f, 1.f, 1.f, 1.f },
-			{ 1.f, 1.f, 1.f, 1.f }
-		));
+		materials.push_back(Material(glm::vec3(1, 1, 0)));
 
 		uint32_t vboCursor = vertexAttrs.totalSize / sizeof(float);
 		uint32_t triCursor = triangles.size();
@@ -575,15 +572,11 @@ public:
 		if (ProjectSettings::reloadScene)
 		{
 			ProjectSettings::reloadScene = false;
-			objects.clear();
-			vertexAttrs.clear();
-			triangles.clear();
-			materials.clear();
-			clearTextures();
+			clearBuffers();
 
 			if (Import3DFromFile(ProjectSettings::scene.path))
 			{
-				//textureErrors = LoadGLTextures(gScene);
+				textureErrors = LoadGLTextures(gScene);
 				SubmitScene(gScene, nullptr, aiMatrix4x4(scene.scale, aiQuaternion(scene.rotationDeg.x, scene.rotationDeg.y, scene.rotationDeg.z), scene.position));
 
 				if (!textureErrors.empty())
@@ -604,7 +597,7 @@ public:
 				<< "Obj " << objects.size() << " (" << objects.size() * sizeof(SceneObject) << " bytes)" << std::endl
 				<< "Attr " << vertexAttrs.types.size() << " (" << vertexAttrs.totalSize << " bytes)" << std::endl
 				<< "Tri " << triangles.size() << " (" << triangles.size() * sizeof(FastTriangle) << " bytes)" << std::endl
-				<< "Mat " << materials.types.size() << " (" << materials.totalSize << " bytes)" << std::endl
+				<< "Mat " << materials.size() << " (" << materials.size() * sizeof(Material) << " bytes)" << std::endl
 				<< "Tex " << textureHandleMap.size() << std::endl;
 		}
 		if (ImGui::BeginPopup(textureLoadingFailed))
@@ -646,6 +639,16 @@ public:
 		updateFlexibleBuffer(bufferHandles.triangles, triangles);
 		updateFlexibleBuffer(bufferHandles.material, materials);
 		submitObjectBuffer();
+	}
+
+	void clearBuffers()
+	{
+		objects.clear();
+		vertexAttrs.clear();
+		triangles.clear();
+		materials.clear();
+		sceneMaterialIndices.clear();
+		clearTextures();
 	}
 
 	bool workOnEvent(SDL_Event event, float deltaTime) override
@@ -818,9 +821,9 @@ public:
 		}
 
 		/* getTexture Filenames and Numb of Textures */
+		std::cout << scene->mNumMaterials << " materials in the scene" << std::endl;
 		for (unsigned int m = 0; m < scene->mNumMaterials; m++)
 		{
-			int texIndex = 0;
 			aiReturn texFound = AI_SUCCESS;
 
 			aiString path;	// filename
@@ -849,12 +852,18 @@ public:
 				std::cout << std::endl;
 			}
 #endif
-			while ((material->GetTexture(aiTextureType_DIFFUSE, texIndex, &path)) == AI_SUCCESS)
+			auto texCount = material->GetTextureCount(aiTextureType_DIFFUSE);
+			std::cout << "has " << texCount << " diff textures." << std::endl;
+			for (int texIndex = 0; texIndex < texCount; texIndex++)
 			{
+				if (material->GetTexture(aiTextureType_DIFFUSE, texIndex, &path) != aiReturn_SUCCESS)
+				{
+					std::cerr << "texture " << texIndex << " not loaded" << std::endl;
+					continue;
+				}
 				textureHandleMap.emplace(path.data, std::make_tuple(
 					std::reference_wrapper(invalidHandle), GLuint64(-1)
 				)); //fill map with texture paths, handles are still pseudo-NULL yet
-				texIndex++;
 			}
 		}
 
@@ -971,19 +980,16 @@ public:
 			auto& texId = std::get<0>(handles);
 			auto& texHandle = std::get<1>(handles);
 			// create a handle for bindless texture shader
-			materials.push(Material<textureHandle, color, color, color, color>(
-				texHandle, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }
-				)
-			);
+			auto newMat = Material(texHandle);
+			materials.push_back(newMat);
 		}
 		//set_float4(c, 0.8f, 0.8f, 0.8f, 1.0f);
 		else if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &diffuse))
 		{
 			//color4_to_float4(&diffuse, c);
-			materials.push(Material<color, color, color, color, color>(
-				{ diffuse.r ,diffuse.g, diffuse.b, diffuse.a }, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }, { 0,0,0,1 }
-				)
-			);
+			materials.push_back(Material(
+				glm::vec3(diffuse.r, diffuse.g, diffuse.b)
+			));
 		}
 		//glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, c);
 
@@ -1081,7 +1087,7 @@ public:
 
 			auto vboCursorPos = vertexAttrs.totalSize / sizeof(float);
 			auto triCursorPos = triangles.size();
-			auto materialIndex = materials.totalSize / sizeof(float);
+			auto materialCursorPos = materials.size();
 
 			for (std::size_t v = 0; v < mesh->mNumVertices; v++)
 			{
@@ -1102,13 +1108,22 @@ public:
 				triangles.push_back(fastTri);
 			}
 
+			uint32_t materialIndex;
+			if (sceneMaterialIndices.contains(mesh->mMaterialIndex))
+			{
+				materialIndex = sceneMaterialIndices[mesh->mMaterialIndex];
+			}
+			else
+			{
+				SubmitMaterial(sc->mMaterials[mesh->mMaterialIndex]);
+				sceneMaterialIndices.emplace(mesh->mMaterialIndex, materialCursorPos);
+				materialIndex = materialCursorPos;
+			}
 			objects.push_back(SceneObject(
 				materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,
 				mesh->HasVertexColors(0), mesh->HasNormals(), mesh->HasTextureCoords(0)
-			)
-			);
+			));
 
-			SubmitMaterial(sc->mMaterials[mesh->mMaterialIndex]);
 		}
 
 		// draw all children
