@@ -27,6 +27,8 @@ namespace ProjectSettings {
 	inline GLenum debugOutput = GL_DEBUG_SEVERITY_LOW;
 	inline bool pathTracing = false;
 	inline std::size_t rayIteration = 0;
+	inline std::size_t maxIterations = 0;
+	inline std::size_t maxBounces = 0;
 	inline bool interactive = false;
 	inline float lightMultiplier = 5.f;
 };

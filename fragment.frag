@@ -733,6 +733,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         vec4 previousNormalEmission = imageLoad(uScreenNormal, coord);
         vec3 previousNormal = previousNormalEmission.rgb * 2. - 1;
         vec3 emission = vec3(unpackHalf2x16(floatBitsToUint(prevAlbedoEmission.a)), previousNormalEmission.a);
+        // Return only light color for emissive materials
         if(emission.r > 0 || emission.g > 0 || emission.b > 0)
         {
             return max(emission,1.0);
@@ -820,7 +821,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 		    }
         }
         imageStore(uScreenColorDepth, coord, vec4(contrib, prevColorDepth.a));
-        return contrib * uInvRayCount;
+        return contrib * uInvRayCount * PI;
     }
 }
 
