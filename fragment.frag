@@ -4,7 +4,7 @@
 
 #define PI 3.141592653589
 #ifndef NUM_BOUNCES
-#define NUM_BOUNCES 1
+#define NUM_BOUNCES 5
 #endif
 
 #ifdef FLAT_SCREEN
@@ -190,7 +190,7 @@ construct_ONB_frisvad(vec3 normal)
 	}
 	return ret;
 }
-uint seed = 654654;
+uint seed = uint(gl_FragCoord.x + gl_FragCoord.y * gl_FragCoord.x);
 void
 encrypt_tea(inout uvec2 arg)
 {
@@ -650,7 +650,7 @@ bool resolveRay(Ray ray, float far, out vec3 albedo, out vec3 normal, out vec3 e
         if ((closestHit.attrs & 2u) != 0)
         {
             // Has normals
-            surfaceNormal = interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
+            surfaceNormal = normalize(interpolate3(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices));
             currentAttrOffset += 3;
         }
         if ((closestHit.attrs & 4u) != 0)
@@ -680,9 +680,9 @@ void updateGBuffer(vec3 albedo, vec3 normal, float depth, ivec2 coord)
     imageStore(uScreenColorDepth, coord, vec4(vec3(0.), depth));
 }
 
-vec3 sample_light(vec2 rng)
+vec3 sample_light(vec2 rng, Light light)
 {
-	return lights[0].position + vec3(rng.x - 0.5, 0, rng.y - 0.5) * lights[0].size;
+	return light.position + vec3(rng.x - 0.5, 0, rng.y - 0.5) * light.size;
 }
 
 vec3 getPlaneColor(Ray ray, float t)
@@ -739,17 +739,18 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         // Basically the alrogithm from https://www.shadertoy.com/view/4lfcDr
         for(int i = 0; i < NUM_BOUNCES; i++)
         {
+            Light light = lights[0];
             vec3 position = primaryRay.origin + primaryRay.direction * depth;
             { // Next event estimation (sample light)
-			    vec3 pos_ls = sample_light(get_random());
+			    vec3 pos_ls = sample_light(get_random(), light);
                 vec3 dirToLight = pos_ls - position;
 			    vec3 l_nee = dirToLight;
 			    float rr_nee = dot(l_nee, l_nee);
 			    l_nee /= sqrt(rr_nee);
-			    float G = max(0.0, dot(previousNormal, l_nee)) * max(0.0, -dot(l_nee, lights[0].normal)) / rr_nee;
+			    float G = max(0.0, dot(previousNormal, l_nee)) * max(0.0, -dot(l_nee, light.normal)) / rr_nee;
 
 			    if(G > 0.0) {
-				    float light_pdf = 1.0 / (lights[0].area * G);
+				    float light_pdf = 1.0 / (light.area * G);
 				    float brdf_pdf = 1.0 / PI;
 
 				    float w = light_pdf / (light_pdf + brdf_pdf);
@@ -771,7 +772,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
                         testVisibility(obj, shadowRay, closestHit);
                     }
                     if(closestHit.rayT == far) {
-					    vec3 Le = lights[0].color.xyz;
+					    vec3 Le = light.color.xyz;
 					    contrib += throughput * (Le * w * brdf) / light_pdf;
 				    }
 			    }
@@ -784,16 +785,16 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 
 			        float brdf_pdf = 1.0 / PI;
 
-			        if(emission.x > 0. || emission.y > 0. || emission.z > 0.) { // hit light_source
+			        if(emission.x > 0. || emission.y > 0. || emission.z > 0.) { // hit light source
 				        float G = max(0.0, dot(secondary.direction, previousNormal)) * max(0.0, -dot(secondary.direction, normal)) / (depth * depth);
 				        if(G <= 0.0) // hit back side of light source
 					        break;
 
-				        float light_pdf = 1.0 / (lights[0].area * G);
+				        float light_pdf = 1.0 / (light.area * G);
 
 				        float w = brdf_pdf / (light_pdf + brdf_pdf);
 
-				        vec3 Le = lights[0].color.rgb;
+				        vec3 Le = light.color.rgb;
 				        contrib += throughput * (Le * w * brdf) / brdf_pdf;
 				        break;
 			        }
