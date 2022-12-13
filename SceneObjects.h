@@ -88,12 +88,17 @@ struct DynamicMaterial {
 struct Material {
 	uint32_t isTexture;
 	glm::vec3 colorOrHandle;
+	glm::vec3 emissive = glm::vec3(0.);
+	float transparency = 1;
+
+	Material()
+	{}
 
 	Material(glm::uint64 handle)
 	{
 		isTexture = 1;
 		this->colorOrHandle = glm::vec3(
-			glm::uintBitsToFloat((handle >> 4u) & 0xFFFFFFFFu),
+			glm::uintBitsToFloat((handle >> 32u) & 0xFFFFFFFFu),
 			glm::uintBitsToFloat(handle & 0xFFFFFFFFu), 0.f
 		);
 	}
@@ -167,17 +172,21 @@ struct SceneObject {
 	uint32_t triNumber;
 	uint32_t vertexAttrsMask;
 	uint32_t totalAttrSize;
+	glm::vec3 aabbMin;
+	glm::vec3 aabbMax;
 
 	SceneObject(
 		uint32_t material,
 		uint32_t vboStartIndex,
 		uint32_t indexIndex,
 		uint32_t triNumber,
-		bool colors, bool normals, bool uvs) :
+		bool colors, bool normals, bool uvs, glm::vec3 aabbMin, glm::vec3 aabbMax) :
 		material(material),
 		vboStartIndex(vboStartIndex),
 		indexIndex(indexIndex),
-		triNumber(triNumber)
+		triNumber(triNumber),
+		aabbMax(aabbMax),
+		aabbMin(aabbMin)
 	{
 		totalAttrSize = 0;
 		vertexAttrsMask = 0;
@@ -378,3 +387,12 @@ FastTriangle toFast(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::uvec3 indices
 		glm::vec4(indices, 0)
 	);
 }
+
+struct Light {
+	glm::vec3 position;
+	float size; //Dimension in both axes
+	glm::vec3 normal;
+	float area; // size squared
+	glm::vec4 emission;
+	uint32_t object;
+};

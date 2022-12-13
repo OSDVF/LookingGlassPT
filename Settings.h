@@ -16,13 +16,16 @@ namespace ProjectSettings {
 	} GlobalScreenType;
 	inline bool applyScreenType = false;
 	inline bool recompileFShaders = false;
-	inline bool reloadScene = false;
+	inline bool reloadScene = true;
 	inline struct {
-		std::filesystem::path path = "";
-		aiVector3D scale = { 1,1,1 };
+		std::filesystem::path path = "cornellBox.glb";
+		aiVector3D scale = { 10,10,10 };
 		aiVector3D position;
-		aiVector3D rotationDeg ;
+		aiVector3D rotationDeg;
 	} scene;
-	inline int objectCountLimit = 2;
+	inline int objectCountLimit = 10;
 	inline GLenum debugOutput = GL_DEBUG_SEVERITY_LOW;
+	inline bool pathTracing = false;
+	inline std::size_t rayIteration = 0;
+	inline bool interactive = false;
 };

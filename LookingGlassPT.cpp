@@ -20,7 +20,7 @@
 #define WINDOW_X 5
 #define WINDOW_Y 100
 #define WINDOW_W 640
-#define WINDOW_H 480
+#define WINDOW_H 600
 
 std::mutex queMut;
 std::mutex powerSaveMut;
@@ -69,7 +69,7 @@ int main(int argc, const char** argv)
 
 	std::array<AppWindow*, 2> windows = {
 	new ControlWindow(windows, "Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H, debug),
-	new ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 2, forceFlat),
+	new ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 1.5, forceFlat),
 	};
 
 	std::array<std::deque<SDL_Event>, windows.size()> eventQueues;
@@ -174,7 +174,7 @@ int main(int argc, const char** argv)
 		}
 
 		auto now = SDL_GetPerformanceCounter();
-		float deltaTime = 1000 * ((now - lastTime) / (float)SDL_GetPerformanceFrequency());
+		float deltaTime = std::min(1000 * ((now - lastTime) / (float)SDL_GetPerformanceFrequency()), 1.f);
 		lastTime = now;
 		if (hasEvent)
 		{
@@ -224,7 +224,7 @@ int main(int argc, const char** argv)
 						{
 							//Do nothing, probably a race condition occured
 						}
-						exit = window->workOnEvent(event, deltaTime);
+						exit = exit || window->workOnEvent(event, deltaTime);
 					}
 				}
 				else

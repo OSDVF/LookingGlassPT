@@ -6,6 +6,7 @@
 #include <sstream>
 #include <array>
 #include <string>
+#include <limits>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -43,13 +44,19 @@ public:
 		GLuint triangles;
 		GLuint objects;
 		GLuint material;
-		GLuint textures;
+		GLuint lights;
 	} bufferHandles;
 	struct BufferDefinition {
 		GLuint index;
 		GLint location;
 	};
+	struct ImageDefinition {
+		GLint location;
+		GLuint unit;
+		GLuint texture;
+	};
 	struct {
+		GLuint framebufferTexture;
 		GLint uTime;
 		GLint uWindowSize;
 		GLint uWindowPos;
@@ -59,17 +66,24 @@ public:
 		GLint uViewCone;
 		GLint uFocusDistance;
 		GLint uObjectCount;
+		GLint uRayParameters;
 		BufferDefinition uCalibration;
 		BufferDefinition uObjects;
+		ImageDefinition uScreenAlbedoDepth;
+		ImageDefinition uScreenNormalDepth;
 		BufferDefinition Attribute;
 		BufferDefinition Triangles;
 		BufferDefinition Material;
+		BufferDefinition Lights;
 	} shaderInputs;
 
 	anyVector vertexAttrs;
 	std::vector<FastTriangle> triangles;
 	std::vector<SceneObject> objects;
 	std::vector<Material> materials;
+	std::vector<Light> lights;
+	uint32_t rayNumber;
+	uint32_t raySalt;
 
 	//
 	// Asset Import Library Objects
@@ -126,6 +140,9 @@ public:
 		glNamedBufferData(fullScreenVertexBuffer, screenQuadVertices.size() * sizeof(glm::vec2), screenQuadVertices.data(), GL_STATIC_DRAW);
 		GlHelpers::setVertexAttrib(fullScreenVAO, 0, 2, GL_FLOAT, fullScreenVertexBuffer, 0, sizeof(glm::vec2));
 
+		//glEnable(GL_BLEND);
+		glBlendFuncSeparate(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA, GL_ZERO, GL_ZERO);
+		glBlendColor(1., 1., 1., 1.);
 		glUseProgram(program);
 		bindShaderInputs();
 		GLint blockSize;
@@ -154,11 +171,29 @@ public:
 		glBufferData(GL_SHADER_STORAGE_BUFFER, triangles.size() * sizeof(FastTriangle), triangles.data(), GL_STATIC_READ);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Triangles.location, bufferHandles.triangles);
 
-
 		glGenBuffers(1, &bufferHandles.material);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.material);
 		glBufferData(GL_SHADER_STORAGE_BUFFER, materials.size() * sizeof(Material), materials.data(), GL_STATIC_READ);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Material.location, bufferHandles.material);
+
+		glGenBuffers(1, &bufferHandles.lights);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.lights);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, lights.size() * sizeof(Light), lights.data(), GL_STATIC_READ);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Lights.location, bufferHandles.lights);
+
+		createFullScreenImageBuffer(shaderInputs.uScreenAlbedoDepth.texture, shaderInputs.uScreenAlbedoDepth.unit);
+		createFullScreenImageBuffer(shaderInputs.uScreenNormalDepth.texture, shaderInputs.uScreenNormalDepth.unit);
+
+		// Create 16bit framebuffer because the colors would otherwise get crippled after a few path tracing iterations
+		glGenTextures(1, &shaderInputs.framebufferTexture);
+		glBindTexture(GL_TEXTURE_2D, shaderInputs.framebufferTexture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, windowWidth, windowHeight, 0, GL_RGBA, GL_FLOAT, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, shaderInputs.framebufferTexture, 0);
+		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+			std::cerr << "Framebuffer not complete!" << std::endl;
 
 		glBindVertexArray(fullScreenVAO);
 		glUniform1f(shaderInputs.uTime, 0);
@@ -173,6 +208,22 @@ public:
 		//loadTestScene();
 		updateBuffers();
 	}
+	void createFullScreenImageBuffer(GLuint& textureId, GLuint binding)
+	{
+		//Create the texture
+		glGenTextures(1, &textureId);
+		glBindTexture(GL_TEXTURE_2D, textureId);
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, windowWidth, windowHeight);
+		glBindTexture(GL_TEXTURE_2D, 0); //Unbind the texture
+
+		bindImage(textureId, binding);
+	}
+	void bindImage(GLuint& textureId, GLuint binding)
+	{
+		//Use the texture as an image
+		glBindImageTexture(binding, textureId, 0, 0, 0, GL_READ_WRITE, GL_RGBA8);
+	}
+
 	void createFlexibleBuffer(GLuint& bufferHandle, GLuint index, anyVector& buffer)
 	{
 		glGenBuffers(1, &bufferHandle);
@@ -226,6 +277,7 @@ public:
 	void bindShaderInputs()
 	{
 		shaderInputs = {
+			0,
 			glGetUniformLocation(program, "uTime"),
 			glGetUniformLocation(program, "uWindowSize"),
 			glGetUniformLocation(program, "uWindowPos"),
@@ -235,6 +287,7 @@ public:
 			glGetUniformLocation(program, "uViewCone"),
 			glGetUniformLocation(program, "uFocusDistance"),
 			glGetUniformLocation(program, "uObjectCount"),
+			glGetUniformLocation(program, "uRayParameters"),
 			{
 				glGetUniformBlockIndex(program, "CalibrationBuffer")
 			},
@@ -242,16 +295,28 @@ public:
 				glGetUniformBlockIndex(program, "ObjectBuffer")
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,  "AttributeBuffer"),
+				glGetUniformLocation(program, "uScreenAlbedoDepth"),
 				2
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "TriangleBuffer"),
+				glGetUniformLocation(program, "uScreenNormalDepth"),
 				3
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "MaterialBuffer"),
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,  "AttributeBuffer"),
 				4
+			},
+			{
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "TriangleBuffer"),
+				5
+			},
+			{
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "MaterialBuffer"),
+				6
+			},
+			{
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "LightBuffer"),
+				7
 			},
 		};
 		glGetActiveUniformBlockiv(program, shaderInputs.uCalibration.index, GL_UNIFORM_BLOCK_BINDING, &shaderInputs.uCalibration.location);
@@ -296,9 +361,22 @@ public:
 		glUniform1f(shaderInputs.uViewCone, glm::radians(viewCone));
 		glUniform1f(shaderInputs.uFocusDistance, focusDistance);
 		glUniform2f(shaderInputs.uMouse, mouseX, mouseY);
+		if (ProjectSettings::pathTracing)
+		{
+			glUniform4ui(shaderInputs.uRayParameters, ProjectSettings::rayIteration, glm::uintBitsToFloat(std::rand()), glm::uintBitsToFloat(std::rand()), 0);
+			glBlendColor(1.f, 1.f, 1.f, 1.f / ((float)++rayIteration));
+		}
+		else
+		{
+			glUniform4ui(shaderInputs.uRayParameters, 0, 0, 0, 0);
+			glBlendColor(1.f, 1.f, 1.f, 1.f);
+		}
 
 		// Draw full screen quad with the path tracer shader
-		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		if (ProjectSettings::pathTracing || ProjectSettings::rayIteration == 0)
+		{
+			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		}
 		frame++;
 	}
 
@@ -318,206 +396,9 @@ public:
 		}
 	}
 
-	glm::vec3 getRingPoint(float R, float N, float i)
-	{
-		auto alpha = (2.0f * glm::pi<glm::float32>() / N) * i;
-		return R * glm::vec3(glm::sin(alpha), 0, glm::cos(alpha));
-	}
-
-	glm::vec3 getSubRingPoint(float M, float j, glm::vec3 center)
-	{
-		auto beta = (2.0f * glm::pi<glm::float32>() / M) * j;
-		return center + (glm::cos(beta) * glm::normalize(center)
-			+ glm::vec3(0, 1, 0) * glm::sin(beta));
-	}
-
-	//https://gist.github.com/ciembor/1494530
-	/*
-	 * Converts an HUE to r, g or b.
-	 * returns float in the set [0, 1].
-	 */
-	float hue2rgb(float p, float q, float t) {
-
-		if (t < 0)
-			t += 1;
-		if (t > 1)
-			t -= 1;
-		if (t < 1. / 6)
-			return p + (q - p) * 6 * t;
-		if (t < 1. / 2)
-			return q;
-		if (t < 2. / 3)
-			return p + (q - p) * (2. / 3 - t) * 6;
-
-		return p;
-
-	}
-
-	////////////////////////////////////////////////////////////////////////
-
-	/*
-	 * Converts an HSL color value to RGB. Conversion formula
-	 * adapted from http://en.wikipedia.org/wiki/HSL_color_space.
-	 * Assumes h, s, and l are contained in the set [0, 1] and
-	 * returns RGB in the set [0, 255].
-	 */
-	glm::vec3 hsl2rgb(float h, float s, float l) {
-
-		glm::vec3 result;
-
-		if (0 == s) {
-			result.r = result.g = result.b = l; // achromatic
-		}
-		else {
-			float q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-			float p = 2 * l - q;
-			result.r = hue2rgb(p, q, h + 1. / 3);
-			result.g = hue2rgb(p, q, h);
-			result.b = hue2rgb(p, q, h - 1. / 3);
-		}
-
-		return result;
-
-	}
-
-	bool loadTestScene()
-	{
-		triangles.push_back(toFast(
-			glm::vec3(0.5, 1, 1),
-			glm::vec3{ 1, 0, 1 },//pos
-			glm::vec3{ 0, 0, 1 },//pos,
-			glm::uvec3(0, 1, 2)
-		));
-		vertexAttrs.push({
-			glm::vec4{ 1,0,0,1 },//color
-			glm::vec4{ 0,1,0,1 },//color
-			glm::vec4{ 0,0,1,1 }//color
-			}
-		);
-
-
-		objects.push_back(SceneObject(
-			0,//material
-			0,//VBO position in global vertex buffer
-			0,//first index index
-			1,//total triangles
-			true, false, false
-		));
-
-
-		materials.push_back(Material(glm::vec3(1, 1, 0)));
-
-		uint32_t vboCursor = vertexAttrs.totalSize / sizeof(float);
-		uint32_t triCursor = triangles.size();
-
-		const float R = 5.0f;
-		const float N = 10;
-		const float M = 10;
-		int index = 0;
-		std::vector<uint32_t> indices;
-		std::vector<glm::vec3> vertices;
-		for (float i = 0; i < N; i++)
-		{
-			auto pointOnRing = getRingPoint(R, N, i);
-			GLuint firstIndexInSubring = index;
-			for (float j = 0; j < M - 1; j += 2)
-			{
-				auto onSubRing = getSubRingPoint(M, j, pointOnRing);
-				auto nextRing = getRingPoint(R, N, i + 1);
-				auto onNextSubRing = getSubRingPoint(M, j + 2, nextRing);
-				auto onPrevSubRing = getSubRingPoint(M, j, nextRing);
-				if ((int)j % 2 == 0)
-				{
-					vertexAttrs.push(
-						{ hsl2rgb(i / N, 1, j / M), 1.f }
-					);
-					vertices.push_back(onSubRing);
-					indices.push_back(index++);
-				}
-				else
-				{
-					indices.push_back(firstIndexInSubring + 1);
-				}
-				if (j == 0)
-				{
-					vertexAttrs.push(
-						{ hsl2rgb((i + 1) / N, 1, j / M), 1.f }
-					);
-					vertices.push_back(onPrevSubRing);
-					indices.push_back(index++);
-				}
-				else
-				{
-					indices.push_back(index - 2);
-				}
-				if ((int)j % 2 == 0)
-				{
-					vertexAttrs.push(
-						{ hsl2rgb((i + 1) / N, 1, (j + 2) / M), 1.f }
-					);
-					vertices.push_back(onNextSubRing);
-
-					indices.push_back(index++);
-				}
-				else
-				{
-					indices.push_back(firstIndexInSubring + 2);
-				}
-
-				//
-				// Second triangle in a quad
-				//
-				indices.push_back(index - 1);
-				if (j == 0)
-				{
-					indices.push_back(index - 3);
-				}
-				else
-				{
-					indices.push_back(index - 2);
-				}
-
-
-				if (j == M - 2)
-				{
-					// The last vertex is the same as the first
-					indices.push_back(firstIndexInSubring);
-				}
-				else
-				{
-					indices.push_back(index);
-				}
-			}
-		}
-		for (std::size_t i = 0; i < indices.size(); i += 3)
-		{
-			triangles.push_back(toFast(
-				vertices[indices[i]],
-				vertices[indices[i + 1]],
-				vertices[indices[i + 2]],
-				glm::uvec3(indices[i], indices[i + 1], indices[i + 2])
-			));
-		}
-
-
-		objects.push_back(SceneObject(
-			//attribute sizes
-			0,//material
-			vboCursor,//VBO position in global vertex buffer
-			triCursor,//first index index
-			(uint32_t)indices.size() / 3,//total indices
-			true, false, false
-		)
-		);
-
-		//std::cout << vertices.debug(true).rdbuf();
-		return true;
-	}
-
 	float f;
 	int counter = 0;
 	float frame = 1;
-	bool interactive = false;
 	bool focal = false;
 	bool fullscreen = false;
 
@@ -537,6 +418,13 @@ public:
 	{
 		AppWindow::renderOnEvent(e);
 		render();
+	}
+	void recreateBufferImages()
+	{
+		glDeleteTextures(1, &shaderInputs.uScreenAlbedoDepth.texture);
+		glDeleteTextures(1, &shaderInputs.uScreenNormalDepth.texture);
+		createFullScreenImageBuffer(shaderInputs.uScreenAlbedoDepth.texture, shaderInputs.uScreenAlbedoDepth.unit);
+		createFullScreenImageBuffer(shaderInputs.uScreenNormalDepth.texture, shaderInputs.uScreenNormalDepth.unit);
 	}
 
 	std::string textureErrors;
@@ -558,16 +446,9 @@ public:
 			recompileFragmentSh();
 			GlHelpers::linkProgram(program);
 			bindShaderInputs();
+			recreateBufferImages();
 			glUniform2f(shaderInputs.uWindowSize, windowWidth, windowHeight);
 			updateBuffers();
-		}
-		if (ProjectSettings::debugOutput)
-		{
-			glEnable(GL_DEBUG_OUTPUT);
-		}
-		else
-		{
-			glDisable(GL_DEBUG_OUTPUT);
 		}
 		if (ProjectSettings::reloadScene)
 		{
@@ -638,6 +519,7 @@ public:
 		updateFlexibleBuffer(bufferHandles.vertex, vertexAttrs);
 		updateFlexibleBuffer(bufferHandles.triangles, triangles);
 		updateFlexibleBuffer(bufferHandles.material, materials);
+		updateFlexibleBuffer(bufferHandles.lights, lights);
 		submitObjectBuffer();
 	}
 
@@ -647,6 +529,7 @@ public:
 		vertexAttrs.clear();
 		triangles.clear();
 		materials.clear();
+		lights.clear();
 		sceneMaterialIndices.clear();
 		clearTextures();
 	}
@@ -708,6 +591,18 @@ public:
 			case SDL_WINDOWEVENT_CLOSE:
 				hide();
 				break;
+			case SDL_WINDOWEVENT_FOCUS_LOST:
+				interactive = false;
+				SDL_CaptureMouse(SDL_FALSE);
+				SDL_SetRelativeMouseMode(SDL_FALSE);
+				break;
+			case SDL_WINDOWEVENT_FOCUS_GAINED:
+				if (interactive)
+				{
+					SDL_CaptureMouse(SDL_TRUE);
+					SDL_SetRelativeMouseMode(SDL_TRUE);
+				}
+				break;
 			}
 			break;
 		case SDL_MOUSEMOTION:
@@ -733,6 +628,9 @@ public:
 	{
 		AppWindow::resized();
 		glUniform2f(shaderInputs.uWindowSize, windowWidth, windowHeight);
+		glBindTexture(GL_TEXTURE_2D, shaderInputs.framebufferTexture);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, windowWidth, windowHeight, 0, GL_RGBA, GL_FLOAT, NULL);
+		recreateBufferImages();
 		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
 	}
 	void moved() override
@@ -795,7 +693,7 @@ public:
 			return false;
 		}
 
-		gScene = importer.ReadFile(pFile.string(), aiProcessPreset_TargetRealtime_Quality);
+		gScene = importer.ReadFile(pFile.string(), aiProcessPreset_TargetRealtime_Quality | aiPostProcessSteps::aiProcess_FlipUVs);
 
 		// If the import failed, report it
 		if (!gScene)
@@ -967,7 +865,7 @@ public:
 
 		int texIndex = 0;
 		aiString texPath;	//contains filename of texture
-
+		Material newMat;
 		if (AI_SUCCESS == mtl->GetTexture(aiTextureType_DIFFUSE, texIndex, &texPath))
 		{
 			//bind texture
@@ -983,56 +881,19 @@ public:
 			auto newMat = Material(texHandle);
 			materials.push_back(newMat);
 		}
-		//set_float4(c, 0.8f, 0.8f, 0.8f, 1.0f);
 		else if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &diffuse))
 		{
 			//color4_to_float4(&diffuse, c);
-			materials.push_back(Material(
+			newMat = Material(
 				glm::vec3(diffuse.r, diffuse.g, diffuse.b)
-			));
+			);
+			newMat.transparency = diffuse.a;
 		}
-		//glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, c);
-
-		/*set_float4(c, 0.0f, 0.0f, 0.0f, 1.0f);
-		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_SPECULAR, &specular))
-			color4_to_float4(&specular, c);
-		glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, c);
-
-		set_float4(c, 0.2f, 0.2f, 0.2f, 1.0f);
-		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_AMBIENT, &ambient))
-			color4_to_float4(&ambient, c);
-		glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, c);
-
-		set_float4(c, 0.0f, 0.0f, 0.0f, 1.0f);
 		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_EMISSIVE, &emission))
-			color4_to_float4(&emission, c);
-		glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, c);
-
-		max = 1;
-		ret1 = aiGetMaterialFloatArray(mtl, AI_MATKEY_SHININESS, &shininess, &max);
-		max = 1;
-		ret2 = aiGetMaterialFloatArray(mtl, AI_MATKEY_SHININESS_STRENGTH, &strength, &max);
-		if ((ret1 == AI_SUCCESS) && (ret2 == AI_SUCCESS))
-			glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess * strength);
-		else {
-			glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 0.0f);
-			set_float4(c, 0.0f, 0.0f, 0.0f, 0.0f);
-			glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, c);
+		{
+			newMat.emissive = GlHelpers::aiToGlm(emission);
 		}
-
-		max = 1;
-		if (AI_SUCCESS == aiGetMaterialIntegerArray(mtl, AI_MATKEY_ENABLE_WIREFRAME, &wireframe, &max))
-			fill_mode = wireframe ? GL_LINE : GL_FILL;
-		else
-			fill_mode = GL_FILL;
-		glPolygonMode(GL_FRONT_AND_BACK, fill_mode);
-
-		max = 1;
-		if ((AI_SUCCESS == aiGetMaterialIntegerArray(mtl, AI_MATKEY_TWOSIDED, &two_sided, &max)) && two_sided)
-			glEnable(GL_CULL_FACE);
-		else
-			glDisable(GL_CULL_FACE);
-			*/
+		materials.push_back(newMat);
 	}
 
 	int getUvNum(const aiMesh* mesh)
@@ -1079,6 +940,11 @@ public:
 		// draw all meshes assigned to this node
 		for (auto n = (decltype(nd->mNumMeshes))0; n < nd->mNumMeshes; ++n)
 		{
+			std::cout << nd->mName.C_Str() << " has a mesh\n";
+			glm::vec3 aabbMax(-std::numeric_limits<float>::infinity());
+			glm::vec3 aabbMin(std::numeric_limits<float>::infinity());
+			glm::vec3 averageNormal = glm::vec3(0, -1, 0);
+
 			if (objects.size() >= objectCountLimit)
 			{
 				return;
@@ -1088,10 +954,19 @@ public:
 			auto vboCursorPos = vertexAttrs.totalSize / sizeof(float);
 			auto triCursorPos = triangles.size();
 			auto materialCursorPos = materials.size();
+			auto lightCursorPos = lights.size();
 
-			for (std::size_t v = 0; v < mesh->mNumVertices; v++)
+			std::size_t v = 0;
+			pushAttributes(mesh, v, transMat);
+			if (mesh->mNormals != nullptr)
+			{
+				averageNormal = GlHelpers::aiToGlm(mesh->mNormals[v]);
+			}
+			for (v = 1; v < mesh->mNumVertices; v++)
 			{
 				pushAttributes(mesh, v, transMat);
+				float invVertNumber = 1.f / ((float)(v + 1.f));
+				averageNormal = glm::mix(GlHelpers::aiToGlm(mesh->mNormals[v]), averageNormal, invVertNumber);
 			}
 			// Construct triangle lookup table
 			for (std::size_t f = 0; f < mesh->mNumFaces; f++)
@@ -1104,6 +979,14 @@ public:
 				glm::vec3 v0 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.x]);
 				glm::vec3 v1 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.y]);
 				glm::vec3 v2 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.z]);
+
+				aabbMax = glm::max(aabbMax, v0);
+				aabbMax = glm::max(aabbMax, v1);
+				aabbMax = glm::max(aabbMax, v2);
+				aabbMin = glm::min(aabbMin, v0);
+				aabbMin = glm::min(aabbMin, v1);
+				aabbMin = glm::min(aabbMin, v2);
+
 				auto fastTri = toFast(v0, v1, v2, indices);
 				triangles.push_back(fastTri);
 			}
@@ -1119,11 +1002,32 @@ public:
 				sceneMaterialIndices.emplace(mesh->mMaterialIndex, materialCursorPos);
 				materialIndex = materialCursorPos;
 			}
+
+			auto thisEmission = materials[materialIndex].emissive;
+			if (thisEmission != glm::vec3(0))
+			{
+				// If this object is emissive, treat is as a light
+				auto areaSize = glm::distance(aabbMin, aabbMax);
+				Light currentLight = {
+					glm::mix(aabbMin, aabbMax, 0.5f),
+					areaSize,
+					averageNormal,
+					areaSize * areaSize,
+					glm::vec4(thisEmission,1.f),
+					objects.size()
+				};
+				lights.push_back(currentLight);
+			}
 			objects.push_back(SceneObject(
 				materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,
-				mesh->HasVertexColors(0), mesh->HasNormals(), mesh->HasTextureCoords(0)
+				mesh->HasVertexColors(0), mesh->HasNormals(), mesh->HasTextureCoords(0), aabbMin, aabbMax
 			));
-
+			std::cout << "is obj number " << objects.size() - 1 << " begins at " << triCursorPos << " with material " << materialIndex << std::endl;
+			aiVector3D pos;
+			aiQuaternion rot;
+			transMat.DecomposeNoScaling(rot, pos);
+			aiVector3D sca = { transMat[0][0] ,transMat[1][1],transMat[2][2] };
+			std::cout << "pos " << GlHelpers::aiToGlm(pos) << " rot " << rot.x << "," << rot.y << "," << rot.z << "," << rot.w << " sca " << GlHelpers::aiToGlm(sca) << std::endl;
 		}
 
 		// draw all children

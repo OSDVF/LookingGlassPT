@@ -5,7 +5,11 @@
 #include <imgui.h>
 #include <array>
 #include <nfd.h>
-
+std::ostream& operator<<(std::ostream& os, const glm::vec3& c)
+{
+	os << c.r << ',' << c.g << ',' << c.b;
+	return os;
+}
 #define DEBUG_SEVERITY_NOTHING GL_DEBUG_SEVERITY_LOW + 1
 
 // This window is 'lazy' or power-saving, so it doesn't have a draw() method
@@ -69,6 +73,34 @@ public:
 			};
 			ProjectSettings::debugOutput = indexToSeverity[level];
 		}
+		if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			if (ProjectSettings::pathTracing)
+			{
+				if (ImGui::Button("Stop Path Tracing"))
+				{
+					ProjectSettings::pathTracing = false;
+				}
+				ImGui::SameLine();
+				ImGui::Text("Iteration: %d", ProjectSettings::rayIteration);
+			}
+			else
+			{
+				if (ImGui::Button("Start Path Tracing"))
+				{
+					ProjectSettings::pathTracing = true;
+					ProjectSettings::interactive = false;
+				}
+				if (ProjectSettings::rayIteration > 0)
+				{
+					if (ImGui::Button("Reset Result"))
+					{
+						ProjectSettings::rayIteration = 0;
+					}
+				}
+			}
+			ImGui::TreePop();
+		}
 		if (ImGui::RadioButton("Looking Glass", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::LookingGlass))
 		{
 			ProjectSettings::applyScreenType = true;
@@ -77,20 +109,25 @@ public:
 		{
 			ProjectSettings::applyScreenType = true;
 		}
-		bool cameraEdited = ImGui::SliderFloat("FOV", &ProjectSettings::fov, 30.f, 100.f);
-		cameraEdited = ImGui::SliderFloat("Near Plane", &ProjectSettings::nearPlane, 0.01f, 1) || cameraEdited;
-		cameraEdited = ImGui::SliderFloat("Far Plane", &ProjectSettings::farPlane, ProjectSettings::nearPlane, 1000) || cameraEdited;
-		ImGui::SliderFloat("Sensitivity", &ProjectSettings::person.Camera.Sensitivity, 0.01, 1);
-		ImGui::InputFloat3("P", glm::value_ptr(ProjectSettings::person.Camera._position));
-		ImGui::InputFloat3("R", glm::value_ptr(ProjectSettings::person.Camera._rotation));
-		if (cameraEdited)
+		if (ImGui::TreeNode("Camera"))
 		{
-			ProjectSettings::person.Camera.SetProjectionMatrixPerspective(
-				ProjectSettings::fov,
-				ProjectSettings::person.Camera.Aspect,
-				ProjectSettings::nearPlane,
-				ProjectSettings::farPlane
-			);
+			bool cameraEdited = ImGui::SliderFloat("FOV", &ProjectSettings::fov, 30.f, 100.f);
+			cameraEdited = ImGui::SliderFloat("Near Plane", &ProjectSettings::nearPlane, 0.01f, 1) || cameraEdited;
+			cameraEdited = ImGui::SliderFloat("Far Plane", &ProjectSettings::farPlane, ProjectSettings::nearPlane, 1000) || cameraEdited;
+			ImGui::SliderFloat("Sensitivity", &ProjectSettings::person.Camera.Sensitivity, 0.01, 1);
+			ImGui::InputFloat3("P", glm::value_ptr(ProjectSettings::person.Camera._position));
+			ImGui::InputFloat3("R", glm::value_ptr(ProjectSettings::person.Camera._rotation));
+			ImGui::TreePop();
+
+			if (cameraEdited)
+			{
+				ProjectSettings::person.Camera.SetProjectionMatrixPerspective(
+					ProjectSettings::fov,
+					ProjectSettings::person.Camera.Aspect,
+					ProjectSettings::nearPlane,
+					ProjectSettings::farPlane
+				);
+			}
 		}
 		bool headerDrawn = false;
 		for (int i = 1; i < allWindows.size(); i++)
@@ -164,6 +201,7 @@ public:
 						scalePower.y = scalePower.z = scalePower.x;
 					}
 					ProjectSettings::scene.scale = GlHelpers::structConvert<aiVector3D, glm::vec3>(glm::pow(glm::vec3(10.f), scalePower));
+					//std::cout << GlHelpers::aiToGlm(ProjectSettings::scene.scale) << std::endl;
 				}
 			}
 			else

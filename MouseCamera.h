@@ -29,7 +29,7 @@ public:
 	{
 	}
 	MouseCamera()
-		: MouseCamera(glm::vec3(0.0f), glm::vec3(0.0f))
+		: MouseCamera(glm::vec3(0.0f, 1.5f, 1.0f), glm::vec3(0.f))
 	{
 	}
 	float Sensitivity = 1.0f;

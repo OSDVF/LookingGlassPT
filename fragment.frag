@@ -2,6 +2,11 @@
 #extension GL_ARB_bindless_texture: enable
 //#extension GL_ARB_gpu_shader_int64 : enable
 
+#define PI 3.141592653589
+#ifndef NUM_BOUNCES
+#define NUM_BOUNCES 3
+#endif
+
 #ifdef FLAT_SCREEN
 #define getRay getFlatScreenRay
 #else
@@ -9,7 +14,7 @@
 #endif
 
 #ifndef MAX_OBJECT_BUFFER
-#define MAX_OBJECT_BUFFER 256
+#define MAX_OBJECT_BUFFER 64
 #endif
 
 out vec4 OutColor;
@@ -40,12 +45,31 @@ struct ObjectDefinition {
     uint triNumber;
     uint vertexAttrs;
     uint totalAttrsSize;
+    float aabbMinX;
+    float aabbMinY;
+    float aabbMinZ;
+    float aabbMaxX;
+    float aabbMaxY;
+    float aabbMaxZ;
+};
+
+struct Light {
+    vec3 position;
+    float size; //Dimension in both axes
+    vec3 normal;
+    float area; // size squared
+    vec4 color;
+    uint object;
 };
 
 layout(shared, binding = 1) uniform ObjectBuffer {
     ObjectDefinition[MAX_OBJECT_BUFFER] objectDefinitions;
 };
 
+layout(binding = 2, rgba8)
+uniform image2D uScreenAlbedoDepth;
+layout(binding = 3, rgba8)
+uniform image2D uScreenNormalDepth;
 
 uniform uint uObjectCount = 0;
 uniform float uTime = 0;
@@ -54,8 +78,14 @@ uniform vec2 uWindowPos;
 uniform vec2 uMouse = vec2(0.5,0.5);
 uniform float uViewCone = radians(20); // 40 deg in rad
 uniform float uFocusDistance = 10;
+uniform uvec4 uRayParameters = uvec4(
+    0,
+    1,
+    1,
+    floatBitsToUint(1.)
+);
 
-layout(std430, binding = 2) readonly buffer AttributeBuffer {
+layout(std430, binding = 4) readonly buffer AttributeBuffer {
     float[] dynamicVertexAttrs;
 };
 
@@ -78,17 +108,26 @@ struct Triangle {
 
 struct Material {
     uint isTexture;
-    uvec2 samplerOrColorRG;
-    float colorB;
+    // samplerOrColor is not defined as uvec2 because GL would perform some weird memory layout
+    uint samplerOrColorX;
+    uint samplerOrColorY;
+    float colorZ;
+    uint samplerOrEmissionX;
+    uint samplerOrEmissionY;
+    float emissionZ;
+    float transparency;
 };
 
-layout(std430, binding = 3) readonly buffer TriangleBuffer {
+layout(std430, binding = 5) readonly buffer TriangleBuffer {
     Triangle[] triangles;
 };
 
-// The layout is actually dynamically constructed
-layout(std430, binding = 4) readonly buffer MaterialBuffer {
+layout(std430, binding = 6) readonly buffer MaterialBuffer {
     Material[] materials;
+};
+
+layout(std430, binding = 7) readonly buffer LightBuffer {
+    Light[] lights;
 };
 
 //TODO vyzkoušet jiné typy projekce, které budou generovat ménì artefaktù
@@ -99,31 +138,6 @@ uniform mat4 uProj;
 struct Ray {
     vec3 origin;
     vec3 direction;
-};
-
-struct AnalyticalObject
-{
-    vec3 position;
-    uint type; //0 = sphere, 1 = cube
-    vec3 size;
-    uint materialIndex;
-};
-
-struct Light {
-    vec3 direction;
-};
-
-AnalyticalObject[1] objects = {
-    AnalyticalObject(
-        vec3(0,0,-5),
-        0,
-        vec3(1),
-        0
-    )
-};
-
-Light[1] lights = {
-    Light(vec3(0, 1, 0))
 };
 
 //const float pos_infinity = uintBitsToFloat(0x7F800000);
@@ -141,6 +155,56 @@ struct Hit {
 };
 
 int subpI;
+
+// https://www.shadertoy.com/view/4lfcDr
+vec2
+sample_disk(vec2 uv)
+{
+	float theta = 2.0 * 3.141592653589 * uv.x;
+	float r = sqrt(uv.y);
+	return vec2(cos(theta), sin(theta)) * r;
+}
+
+// Cosine-weighted sampling.
+vec3
+sample_cos_hemisphere(vec2 uv)
+{
+	vec2 disk = sample_disk(uv);
+	return vec3(disk.x, sqrt(max(0.0, 1.0 - dot(disk, disk))), disk.y);
+}
+
+mat3
+construct_ONB_frisvad(vec3 normal)
+{
+	mat3 ret;
+	ret[1] = normal;
+	if(normal.z < -0.999805696) {
+		ret[0] = vec3(0.0, -1.0, 0.0);
+		ret[2] = vec3(-1.0, 0.0, 0.0);
+	}
+	else {
+		float a = 1.0 / (1.0 + normal.z);
+		float b = -normal.x * normal.y * a;
+		ret[0] = vec3(1.0 - normal.x * normal.x * a, b, -normal.x);
+		ret[2] = vec3(b, 1.0 - normal.y * normal.y * a, -normal.y);
+	}
+	return ret;
+}
+
+vec2 get_random(vec2 coord, vec3 pos)
+{
+    return vec2(uintBitsToFloat(uRayParameters.y) * coord.x * pos.x,uintBitsToFloat(uRayParameters.z) * coord.y * pos.y);
+}
+
+Ray createSecondaryRay(vec2 coord, vec3 pos, vec3 normal)
+{
+    vec2 randomValues = get_random(coord, pos);
+    mat3 onb = construct_ONB_frisvad(normal);
+    vec3 dir = normalize(onb * sample_cos_hemisphere(randomValues));
+    Ray ray_next = Ray(pos, dir);
+	ray_next.origin += normal * 0.01 * dir;//Offset to prevent self-blocking
+    return ray_next;
+}
 
 const int tile = 45;
 Ray generateChaRay(){
@@ -187,63 +251,20 @@ void getFlatScreenRay(vec2 pix, out Ray ray){
   ray = Ray(pos, normalize(dir.xyz));
 }
 
-//https://www.scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-tracer-rendering-simple-shapes/ray-sphere-intersection
-bool solveQuadratic(float a, float b, float c, out float x1, out float x2) 
-{ 
-    if (b == 0) { 
-        // Handle special case where the the two vector ray.dir and V are perpendicular
-        // with V = ray.orig - sphere.centre
-        if (a == 0) return false; 
-
-        x1 = 0;
-        x2 = sqrt(-c / a); 
-        return true; 
-    } 
-    float discr = b * b - 4 * a * c; 
- 
-    if (discr < 0) return false; 
- 
-    float q = (b < 0.f) ? -0.5f * (b - sqrt(discr)) : -0.5f * (b + sqrt(discr)); 
-    x1 = q / a; 
-    x2 = c / q; 
- 
-    return true; 
-} 
-//Analytic solution
-bool raySphereIntersection(vec3 position, float radius, Ray ray, out float t0, out float t1)
-{
-    // They ray dir is normalized so A = 1 
-    vec3 L = ray.origin - position;
-    float A = dot(ray.direction, ray.direction); 
-    float B = 2 * dot(ray.direction, L); 
-    float C = dot(L, L) - radius * radius; 
- 
-    if (!solveQuadratic(A, B, C, t0, t1)) return false;  
-    if (t0 > t1)
-    {
-        float swap = t0;
-        t0 = t1;
-        t1 = swap;
-    }
-    return true; 
-}
-
-bool rayBoxIntersection(vec3 position, vec3 size, Ray ray, out float tmin, out float tmax)
+bool rayBoxIntersection(vec3 minPos, vec3 maxPos, Ray ray)
 {
     // https://tavianator.com/2011/ray_box.html
-    vec3 minPos = position;
-    vec3 maxPos = position + size;
+    vec3 invDir = 1.0/ray.direction;
+    vec3 t1 = (minPos - ray.origin)*invDir;
+    vec3 t2 = (maxPos - ray.origin)*invDir;
 
-    vec3 t1 = (minPos - ray.origin)/ray.direction;
-    vec3 t2 = (maxPos - ray.origin)/ray.direction;
-
-    tmin = max(
+    float tmin = max(
             min(t1.x, t2.x), 
             max(
                 min(t1.y, t2.y), min(t1.z, t2.z)
             )
         );
-    tmax = min(
+    float tmax = min(
             max(t1.x, t2.x),
             min(
                 max(t1.y, t2.y), max(t1.z, t2.z)
@@ -254,100 +275,6 @@ bool rayBoxIntersection(vec3 position, vec3 size, Ray ray, out float tmin, out f
         return false;
 
     return true;
-}
-
-// With normal
-bool getRayBoxIntersection(AnalyticalObject box, Ray ray, out vec3 hitPosition, out vec3 normalAtHit, out float t0)
-{
-    vec3 minPos = box.position;//Lower left edge
-    vec3 maxPos = box.position + box.size;//Upper right edge
-
-    vec3 t1 = (minPos - ray.origin)/ray.direction;
-    vec3 t2 = (maxPos - ray.origin)/ray.direction;
-
-    vec3 tmin = 
-        vec3(
-            min(t1.x, t2.x),
-            min(t1.y, t2.y),
-            min(t1.z, t2.z)
-        );
-    vec3 tmax =
-        vec3(
-            max(t1.x, t2.x),
-            max(t1.y, t2.y),
-            max(t1.z, t2.z)
-        );
-
-    float allMax = min(min(tmax.x,tmax.y),tmax.z);
-    float allMin = max(max(tmin.x,tmin.y),tmin.z);
-
-    if(allMax > 0.0 && allMax > allMin)
-    {
-        hitPosition = ray.origin + ray.direction * allMin;
-        vec3 center = box.position + box.size*0.5;
-        vec3 difference = center - hitPosition;
-        if (allMin == tmin.x) {// Ray hit the X plane
-            normalAtHit = vec3(-1, 0, 0) * sign(difference.x);
-        }
-        else if (allMin == tmin.y) {// Ray hit the Y plane
-            normalAtHit = vec3(0, -1, 0) * sign(difference.y);
-        }
-        else if (allMin == tmin.z) {// Ray hit the Z plane
-            normalAtHit = vec3(0, 0, -1) * sign(difference.z);
-        } 
-        t0 = allMin;
-        return true;
-    }
-    return false;
-}
-
-
-//Geometric solution, with normal
-bool getRaySphereIntersection(AnalyticalObject sphere, Ray ray, out vec3 hitPosition, out vec3 normalAtHit, out float t0)
-{
-    hitPosition = vec3(0,0,0);
-    normalAtHit = vec3(0,0,0);
-    vec3 L = sphere.position - ray.origin;
-    float tca = dot(ray.direction, L);
-    if(tca < 0)
-        return false;
-    float radius2 = sphere.size.x * sphere.size.x;
-    float d2 = dot(L,L) - tca * tca; 
-    if (d2 > radius2) return false; 
-
-    float thc = sqrt(radius2 - d2); 
-    t0 = tca - thc; 
-    float t1 = tca + thc; 
-
-    vec3 hp = ray.origin + ray.direction * t0; // point of intersection 
-    hitPosition = hp;
-    normalAtHit = normalize(hp - sphere.position);
-    return true; 
-}
-
-
-bool rayObjectIntersection(AnalyticalObject object, Ray ray, out float t0, out float t1)
-{
-    switch(object.type)
-    {
-    case 0:
-        //Sphere
-        return raySphereIntersection(object.position, object.size.x, ray, t0, t1);
-    case 1:
-        return rayBoxIntersection(object.position, object.size, ray, t0, t1);
-    }
-}
-
-bool getRayObjectIntersection(AnalyticalObject object, Ray ray, out vec3 hitPosition, out vec3 normalAtHit, out float t0)
-{
-    switch(object.type)
-    {
-    case 0:
-        //Sphere
-        return getRaySphereIntersection(object, ray, hitPosition, normalAtHit, t0);
-    case 1:
-        return getRayBoxIntersection(object, ray, hitPosition, normalAtHit, t0);
-    }
 }
 
 // Extract the sign bit from a 32-bit floating point number.
@@ -365,6 +292,7 @@ float xorf(float x, float y)
 const float tNear = 0.01;
 const float tFar = 1000;
 #define MAGIC
+//#define CULLING
 bool embreeIntersect(const Triangle tri, const Ray ray,
     inout float T, out float U, out float V){
     vec3 edgeA = vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz);
@@ -372,15 +300,23 @@ bool embreeIntersect(const Triangle tri, const Ray ray,
     vec3 normal = vec3(tri.normalX,tri.normalY,tri.normalZ);
     #ifdef MAGIC
     const float den = dot( normal, ray.direction );
+    #ifdef CULLING
     if(den < 0.001)
     {
         return false;
     }
+    #endif
     vec3 C = tri.v0 - ray.origin;
     
     vec3 R = cross(ray.direction, C);
     
     const float absDen = abs( den );
+    #ifndef CULLING
+    if(absDen < 0.001)
+    {
+        return false;
+    }
+    #endif
     const float sgnDen = signmsk( den );
     
     // perform edge tests
@@ -438,7 +374,6 @@ bool embreeIntersect(const Triangle tri, const Ray ray,
 
 
 //#define MOLLER_TRUMBORE
-//#define CULLING
 const float kEpsilon = 1e-8; 
 bool rayTriangleIntersect( 
     const vec3 orig, const vec3 dir, 
@@ -540,8 +475,7 @@ bool rayTriangleIntersect(
 #endif 
 } 
  
- float interpolateAttribute(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
-                            in uint currentAttrOffset, in uvec3 indices)
+ float interpolateAttribute(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize, in uint currentAttrOffset, in uvec3 indices)
  {
     return dynamicVertexAttrs[
             vboStartIndex
@@ -561,8 +495,7 @@ bool rayTriangleIntersect(
     
  }
 
-vec3 interpolate3(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
-                    in uint currentAttrOffset, uvec3 indices)
+vec3 interpolate3(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize, in uint currentAttrOffset, uvec3 indices)
 {
     vec3 result;
     for(uint attrPart = 0; attrPart < 3; attrPart++)
@@ -572,8 +505,7 @@ vec3 interpolate3(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrS
     return result;
 }
 
-vec4 interpolate4(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize,
-                    in uint currentAttrOffset, uvec3 indices)
+vec4 interpolate4(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize, in uint currentAttrOffset, uvec3 indices)
 {
     vec4 result;
     for(uint attrPart = 0; attrPart < 4; attrPart++)
@@ -593,46 +525,65 @@ vec2 interpolate2(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrS
     }
     return result;
 }
-//#define DEBUG
-vec3 getMaterialColor(uint materialIndex, vec2 uv)
+
+vec3 getMaterialColor(uint materialIndex, out vec3 emission, vec2 uv)
 {
-    vec3 color;
-#ifdef DEBUG
-    return vec3(uv, 0);
-#endif
     Material mat = materials[materialIndex];
-    if(mat.isTexture == 1)
+    bool isTexture;
+    vec3 albedo = vec3(0);
+    if((mat.isTexture & 1u) != 0)
     {
+        // Has albedo
         // This is effectively uint64_t
-        sampler2D samp = sampler2D(mat.samplerOrColorRG);
+        sampler2D samp = sampler2D(uvec2(mat.samplerOrColorY, mat.samplerOrColorX));
         // Return a color from a bindless texture
-        uv.y = 1 - uv.y; // UVs are flipped for some reason
-        return texture(samp, uv).xyz;
+        albedo = texture(samp, uv).xyz;
     }
     else
     {
-        return vec3(uintBitsToFloat(mat.samplerOrColorRG), mat.colorB);
+        albedo = vec3(uintBitsToFloat(uvec2(mat.samplerOrColorX, mat.samplerOrColorY)), mat.colorZ);
     }
-    return vec3(1);
+    if((mat.isTexture & 2u) != 0)
+    {
+        // Has emission
+        sampler2D samp = sampler2D(uvec2(mat.samplerOrEmissionY, mat.samplerOrEmissionX));
+        emission = texture(samp, uv).xyz;
+    }
+    else
+    {
+        emission = vec3(uintBitsToFloat(uvec2(mat.samplerOrEmissionX,mat.samplerOrEmissionY)), mat.emissionZ);   
+    }
+    
+    return albedo;
 }
 
-vec3 rayTraceSubPixel(vec2 fragCoord) {
-    Ray ray;
-    getRay(fragCoord, ray);
-    //return ray.direction;
-	//getLookignGlassRay( fragCoord + vec2(1.0/3.0,0.0), ddx_ro, ddx_rd );
-	//getLookignGlassRay( fragCoord + vec2(0.0,    1.0), ddy_ro, ddy_rd );
-    
-    vec3 col;
-    //float far = uProj[2].w / (uProj[2].z + 1.0);
-    float far = 1000;
-    Hit closestHit;
-    closestHit.rayT = far;
-    for (uint o = 0; o < uObjectCount; o++)
+float xorTextureGradBox( in vec2 pos, in vec2 ddx, in vec2 ddy )
+{
+    float xor = 0.0;
+    for( int i=0; i<8; i++ )
     {
-        ObjectDefinition obj = objectDefinitions[o];
+        // filter kernel
+        vec2 w = max(abs(ddx), abs(ddy)) + 0.01;  
+        // analytical integral (box filter)
+        vec2 f = 2.0*(abs(fract((pos-0.5*w)/2.0)-0.5)-abs(fract((pos+0.5*w)/2.0)-0.5))/w;
+        // xor pattern
+        xor += 0.5 - 0.5*f.x*f.y;
+        
+        // next octave        
+        ddx *= 0.5;
+        ddy *= 0.5;
+        pos *= 0.5;
+        xor *= 0.5;
+    }
+    return xor;
+}
 
-        // For each triangle
+void testVisibility(ObjectDefinition obj, Ray ray, inout Hit closestHit)
+{
+    // If the ray intersects the bounding box
+    if(rayBoxIntersection(vec3(obj.aabbMinX,obj.aabbMinY,obj.aabbMinZ), vec3(obj.aabbMaxX,obj.aabbMaxY,obj.aabbMaxZ), ray))
+    {
+        // For each object's triangle
         for(uint i = 0; i < obj.triNumber; i++)
         {
             Triangle tri = triangles[obj.firstTriangle + i];
@@ -653,6 +604,19 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
             }
         }
     }
+}
+
+bool resolveRay(Ray ray, out vec3 albedo, out vec3 normal, out vec3 emission, out float depth)
+{
+    //float far = uProj[2].w / (uProj[2].z + 1.0);
+    float far = 1000;
+    Hit closestHit;
+    closestHit.rayT = far;
+    for (uint o = 0; o < uObjectCount; o++)
+    {
+        ObjectDefinition obj = objectDefinitions[o];
+        testVisibility(obj, ray, closestHit);
+    }
     if(closestHit.rayT != far)
     {
         // Interpolate other triangle attributes by barycentric coordinates
@@ -660,10 +624,11 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
         vec3 surfaceNormal = normalize(closestHit.normal);
         vec3 materialColor = vec3(1., 1., 1.);
         vec4 vertexColor = vec4(1., 1., 1., 0.);
+        vec2 uv = vec2(0., 0.);
         if ((closestHit.attrs & 1u) != 0)
         {
             //Has vertex colors
-            vertexColor = interpolate4(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
+            vertexColor = interpolate4(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);;
             currentAttrOffset += 4;
         }
         if ((closestHit.attrs & 2u) != 0)
@@ -675,28 +640,151 @@ vec3 rayTraceSubPixel(vec2 fragCoord) {
         if ((closestHit.attrs & 4u) != 0)
         {
             // Has uvs
-            vec2 uv = interpolate2(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
-            return getMaterialColor(closestHit.material, uv);
+            uv = interpolate2(closestHit.vboStartIndex, closestHit.barycentric, closestHit.totalAttrSize, currentAttrOffset, closestHit.indices);
             currentAttrOffset += 2;
         }
-        return vec3(vertexColor);
-    }
-    vec3 outPos, outNorm;
-    float outT;
-    if(getRayBoxIntersection(AnalyticalObject(vec3(0,-1,0), 1, vec3(100,0.1,100),0),ray, outPos, outNorm, outT))
-    {
-        return outNorm * 0.5 + 0.5;
-    }
-    return vec3(0.1);
+        materialColor = getMaterialColor(closestHit.material, emission, uv);
 
-    // gamma correction	
-	col = pow( col, vec3(0.4545) );
-
-    // line
-	return col;// * smoothstep( 1.0, 2.0, abs(fragCoord.x-uWindowSize.x/2.0) );
+        albedo = materialColor;//mix(materialColor, vertexColor.rgb, vertexColor.a);
+        normal = surfaceNormal;
+        depth = closestHit.rayT;
+        return true;
+    }
+    return false;
 }
 
-// TODO: subroutine selection
+void updateOutput(vec3 albedo, vec3 normal, float depth, ivec2 coord)
+{
+    float depthLower = mod(depth,25.5);
+    imageStore(uScreenAlbedoDepth, coord, vec4(albedo, (depth/25.5 - depthLower)/25.5));
+    imageStore(uScreenNormalDepth, coord, vec4(normal * 0.5 + 0.5, (depthLower)/25.5));
+}
+
+vec3 sample_light(vec2 rng)
+{
+	return lights[0].position + vec3(rng.x - 0.5, 0, rng.y - 0.5) * lights[0].size;
+}
+
+vec3 rayTraceSubPixel(vec2 ndcCoord) {
+    Ray primaryRay;
+    getRay(ndcCoord, primaryRay);
+    ivec2 coord = ivec2(gl_FragCoord);
+    vec3 albedo, normal, emission;
+    float depth;
+    if(uRayParameters.x == 0)
+    {
+        // This is primary ray
+        if(resolveRay(primaryRay, albedo, normal, emission, depth))
+        {
+            updateOutput(albedo, normal, depth, coord);
+            return albedo + emission;
+        }
+        else
+        {
+            // raytrace-plane
+	        float h = (-1-primaryRay.origin.y)/primaryRay.direction.y;
+	        if( h>0.0 ) 
+	        { 
+		        vec3 pos = primaryRay.origin+ h * primaryRay.direction;
+		        return vec3(xorTextureGradBox(pos.xz,dFdx(pos.xz),dFdy(pos.xz))*0.5);
+	        }
+            updateOutput(vec3(0), vec3(0), 0, coord);
+            return vec3(0.1);
+        }
+    }
+    else
+    {
+        // This is a secondary ray
+        vec4 albedoDepth = imageLoad(uScreenAlbedoDepth, coord);// Albedo is our throughput now
+        vec3 albedo = albedoDepth.rgb;
+        vec3 throughput = vec3(1.0);
+        vec4 normalDepth = imageLoad(uScreenNormalDepth, coord);
+        vec3 previousNormal = normalDepth.xyz * 2. - 1.;
+        float depth = albedoDepth.w * 25.5 * 25.5 + normalDepth.w * 25.5;
+
+        vec3 secondaryColor;
+        vec3 contrib = vec3(0);
+        for(int i = 0; i < NUM_BOUNCES; i++)
+        {
+            vec3 position = primaryRay.origin + primaryRay.direction * depth;
+            { // Next event estimation
+			    vec3 pos_ls = sample_light(get_random(gl_FragCoord.xy, position));
+                vec3 dirToLight = pos_ls - position;
+			    vec3 l_nee = dirToLight;
+			    float rr_nee = dot(l_nee, l_nee);
+			    l_nee /= sqrt(rr_nee);
+			    float G = max(0.0, dot(previousNormal, l_nee)) * max(0.0, -dot(l_nee, lights[0].normal)) / rr_nee;
+
+			    if(G > 0.0) {
+				    float light_pdf = 1.0 / (lights[0].area * G);
+				    float brdf_pdf = 1.0 / PI;
+
+				    float w = light_pdf / (light_pdf + brdf_pdf);
+
+				    vec3 brdf = albedo.rgb / PI;
+
+                    // Test light visibility
+                    float far = length(dirToLight);
+                   
+                    Ray shadowRay = Ray(position, dirToLight / far);
+                    Hit closestHit;
+                    closestHit.rayT = far;//constant far plane for lights
+                    return vec3(1);
+                    for(uint o = 0; o < uObjectCount; o++)
+				    {
+                        if(o == lights[0].object)
+                        {
+                            continue;
+                        }
+                        ObjectDefinition obj = objectDefinitions[o];
+                        testVisibility(obj, shadowRay, closestHit);
+                    }
+                    if(closestHit.rayT == far) {
+					    vec3 Le = lights[0].color.xyz;
+                        return Le;
+					    contrib += throughput * (Le * w * brdf) / light_pdf;
+				    }
+			    }
+		    }
+            { /* brdf */
+                Ray secondary = createSecondaryRay(ndcCoord, position, previousNormal);
+                if(resolveRay(secondary, secondaryColor, normal, emission, depth))
+                {
+			        vec3 brdf = albedo.rgb / PI;
+
+			        float brdf_pdf = 1.0 / PI;
+
+			        if(emission.x > 0. || emission.y > 0. || emission.z > 0.) { /* hit light_source */
+				        float G = max(0.0, dot(secondary.direction, previousNormal)) * max(0.0, -dot(secondary.direction, normal)) / (depth * depth);
+				        if(G <= 0.0) /* hit back side of light source */
+					        break;
+
+				        float light_pdf = 1.0 / (lights[0].area * G);
+
+				        float w = brdf_pdf / (light_pdf + brdf_pdf);
+
+				        vec3 Le = lights[0].color.rgb;
+				        contrib += throughput * (Le * w * brdf) / brdf_pdf;
+
+				        break;
+			        }
+
+			        throughput *= brdf / brdf_pdf;
+
+			        primaryRay = secondary;
+			        previousNormal = normal;
+			        albedo = secondaryColor;
+                }
+                else
+                {
+                    break;
+                }
+		    }
+        }
+
+        return contrib;
+    }
+}
 
 void main() {
     vec3 col = vec3(0);
