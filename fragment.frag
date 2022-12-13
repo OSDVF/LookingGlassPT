@@ -67,9 +67,11 @@ layout(shared, binding = 1) uniform ObjectBuffer {
 };
 
 layout(binding = 2, rgba8)
-uniform image2D uScreenAlbedoDepth;
+uniform image2D uScreenAlbedo;
 layout(binding = 3, rgba8)
-uniform image2D uScreenNormalDepth;
+uniform image2D uScreenNormal;
+layout(binding = 4, rgba16f)
+uniform image2D uScreenColorDepth;
 
 uniform uint uObjectCount = 0;
 uniform float uTime = 0;
@@ -78,14 +80,11 @@ uniform vec2 uWindowPos;
 uniform vec2 uMouse = vec2(0.5,0.5);
 uniform float uViewCone = radians(20); // 40 deg in rad
 uniform float uFocusDistance = 10;
-uniform uvec4 uRayParameters = uvec4(
-    0,
-    1,
-    1,
-    floatBitsToUint(1.)
-);
 
-layout(std430, binding = 4) readonly buffer AttributeBuffer {
+uniform float uInvRayCount = 1.;
+uniform uint uRayIndex = 0;
+
+layout(std430, binding = 5) readonly buffer AttributeBuffer {
     float[] dynamicVertexAttrs;
 };
 
@@ -118,15 +117,15 @@ struct Material {
     float transparency;
 };
 
-layout(std430, binding = 5) readonly buffer TriangleBuffer {
+layout(std430, binding = 6) readonly buffer TriangleBuffer {
     Triangle[] triangles;
 };
 
-layout(std430, binding = 6) readonly buffer MaterialBuffer {
+layout(std430, binding = 7) readonly buffer MaterialBuffer {
     Material[] materials;
 };
 
-layout(std430, binding = 7) readonly buffer LightBuffer {
+layout(std430, binding = 8) readonly buffer LightBuffer {
     Light[] lights;
 };
 
@@ -134,6 +133,7 @@ layout(std430, binding = 7) readonly buffer LightBuffer {
 
 uniform mat4 uView;
 uniform mat4 uProj;
+float cameraFarPlane = uProj[2].w / (uProj[2].z + 1.0);
 
 struct Ray {
     vec3 origin;
@@ -190,15 +190,35 @@ construct_ONB_frisvad(vec3 normal)
 	}
 	return ret;
 }
-
-vec2 get_random(vec2 coord, vec3 pos)
+uint seed = 654654;
+void
+encrypt_tea(inout uvec2 arg)
 {
-    return vec2(uintBitsToFloat(uRayParameters.y) * coord.x * pos.x,uintBitsToFloat(uRayParameters.z) * coord.y * pos.y);
+	uvec4 key = uvec4(0xa341316c, 0xc8013ea4, 0xad90777d, 0x7e95761e);
+	uint v0 = arg[0], v1 = arg[1];
+	uint sum = 0u;
+	uint delta = 0x9e3779b9u;
+
+	for(int i = 0; i < 32; i++) {
+		sum += delta;
+		v0 += ((v1 << 4) + key[0]) ^ (v1 + sum) ^ ((v1 >> 5) + key[1]);
+		v1 += ((v0 << 4) + key[2]) ^ (v0 + sum) ^ ((v0 >> 5) + key[3]);
+	}
+	arg[0] = v0;
+	arg[1] = v1;
+}
+
+vec2
+get_random()
+{
+  	uvec2 arg = uvec2(uTime, seed++);
+  	encrypt_tea(arg);
+  	return fract(vec2(arg) / vec2(0xffffffffu));
 }
 
 Ray createSecondaryRay(vec2 coord, vec3 pos, vec3 normal)
 {
-    vec2 randomValues = get_random(coord, pos);
+    vec2 randomValues = get_random();
     mat3 onb = construct_ONB_frisvad(normal);
     vec3 dir = normalize(onb * sample_cos_hemisphere(randomValues));
     Ray ray_next = Ray(pos, dir);
@@ -529,7 +549,6 @@ vec2 interpolate2(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrS
 vec3 getMaterialColor(uint materialIndex, out vec3 emission, vec2 uv)
 {
     Material mat = materials[materialIndex];
-    bool isTexture;
     vec3 albedo = vec3(0);
     if((mat.isTexture & 1u) != 0)
     {
@@ -606,10 +625,8 @@ void testVisibility(ObjectDefinition obj, Ray ray, inout Hit closestHit)
     }
 }
 
-bool resolveRay(Ray ray, out vec3 albedo, out vec3 normal, out vec3 emission, out float depth)
+bool resolveRay(Ray ray, float far, out vec3 albedo, out vec3 normal, out vec3 emission, out float depth)
 {
-    //float far = uProj[2].w / (uProj[2].z + 1.0);
-    float far = 1000;
     Hit closestHit;
     closestHit.rayT = far;
     for (uint o = 0; o < uObjectCount; o++)
@@ -652,17 +669,28 @@ bool resolveRay(Ray ray, out vec3 albedo, out vec3 normal, out vec3 emission, ou
     }
     return false;
 }
-
-void updateOutput(vec3 albedo, vec3 normal, float depth, ivec2 coord)
+bool resolveRay(Ray ray, out vec3 albedo, out vec3 normal, out vec3 emission, out float depth)
 {
-    float depthLower = mod(depth,25.5);
-    imageStore(uScreenAlbedoDepth, coord, vec4(albedo, (depth/25.5 - depthLower)/25.5));
-    imageStore(uScreenNormalDepth, coord, vec4(normal * 0.5 + 0.5, (depthLower)/25.5));
+    return resolveRay(ray, cameraFarPlane, albedo, normal, emission, depth);
+}
+
+void updateGBuffer(vec3 albedo, vec3 normal, float depth, ivec2 coord)
+{
+    imageStore(uScreenAlbedo, coord, vec4(albedo, 1.0));
+    imageStore(uScreenNormal, coord, vec4(normal * 0.5 + 0.5, 1.0));
+    vec3 prevColor = imageLoad(uScreenColorDepth, coord).xyz;
+    imageStore(uScreenColorDepth, coord, vec4(prevColor, depth));
 }
 
 vec3 sample_light(vec2 rng)
 {
 	return lights[0].position + vec3(rng.x - 0.5, 0, rng.y - 0.5) * lights[0].size;
+}
+
+vec3 getPlaneColor(Ray ray, float t)
+{
+    vec3 pos = ray.origin + t * ray.direction;
+	return vec3(xorTextureGradBox(pos.xz,dFdx(pos.xz),dFdy(pos.xz)) / clamp(t*0.09, 2.1, 8.0));
 }
 
 vec3 rayTraceSubPixel(vec2 ndcCoord) {
@@ -671,36 +699,41 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
     ivec2 coord = ivec2(gl_FragCoord);
     vec3 albedo, normal, emission;
     float depth;
-    if(uRayParameters.x == 0)
+
+    // raytrace the coordinate 'xor' plane at (0,-1,0)
+	float planeDist = (-1-primaryRay.origin.y)/primaryRay.direction.y;
+
+    if(uRayIndex == 0)
     {
         // This is primary ray
         if(resolveRay(primaryRay, albedo, normal, emission, depth))
         {
-            updateOutput(albedo, normal, depth, coord);
+            updateGBuffer(albedo, normal, depth, coord);
+            if(planeDist > 0 && depth > planeDist)
+            {
+                // The object is behind the plane so make the plane 80% transparent
+                return mix(albedo + emission, getPlaneColor(primaryRay, planeDist), 0.3);
+            }
             return albedo + emission;
         }
         else
         {
-            // raytrace-plane
-	        float h = (-1-primaryRay.origin.y)/primaryRay.direction.y;
-	        if( h>0.0 ) 
-	        { 
-		        vec3 pos = primaryRay.origin+ h * primaryRay.direction;
-		        return vec3(xorTextureGradBox(pos.xz,dFdx(pos.xz),dFdy(pos.xz))*0.5);
-	        }
-            updateOutput(vec3(0), vec3(0), 0, coord);
+            if(planeDist > 0)
+            {
+                return getPlaneColor(primaryRay, planeDist);
+            }
             return vec3(0.1);
         }
     }
     else
     {
         // This is a secondary ray
-        vec4 albedoDepth = imageLoad(uScreenAlbedoDepth, coord);// Albedo is our throughput now
-        vec3 albedo = albedoDepth.rgb;
+        vec3 prevAlbedo = imageLoad(uScreenAlbedo, coord).rgb;
+        vec3 albedo = prevAlbedo;
+        vec3 previousNormal = imageLoad(uScreenNormal, coord).xyz * 2. - 1;
+        vec4 prevColorDepth = imageLoad(uScreenColorDepth, coord);
+        float depth = prevColorDepth.a;
         vec3 throughput = vec3(1.0);
-        vec4 normalDepth = imageLoad(uScreenNormalDepth, coord);
-        vec3 previousNormal = normalDepth.xyz * 2. - 1.;
-        float depth = albedoDepth.w * 25.5 * 25.5 + normalDepth.w * 25.5;
 
         vec3 secondaryColor;
         vec3 contrib = vec3(0);
@@ -708,7 +741,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         {
             vec3 position = primaryRay.origin + primaryRay.direction * depth;
             { // Next event estimation
-			    vec3 pos_ls = sample_light(get_random(gl_FragCoord.xy, position));
+			    vec3 pos_ls = sample_light(get_random());
                 vec3 dirToLight = pos_ls - position;
 			    vec3 l_nee = dirToLight;
 			    float rr_nee = dot(l_nee, l_nee);
@@ -725,11 +758,9 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 
                     // Test light visibility
                     float far = length(dirToLight);
-                   
                     Ray shadowRay = Ray(position, dirToLight / far);
                     Hit closestHit;
-                    closestHit.rayT = far;//constant far plane for lights
-                    return vec3(1);
+                    closestHit.rayT = far;//constant far plane for 
                     for(uint o = 0; o < uObjectCount; o++)
 				    {
                         if(o == lights[0].object)
@@ -741,7 +772,6 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
                     }
                     if(closestHit.rayT == far) {
 					    vec3 Le = lights[0].color.xyz;
-                        return Le;
 					    contrib += throughput * (Le * w * brdf) / light_pdf;
 				    }
 			    }
@@ -765,7 +795,6 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 
 				        vec3 Le = lights[0].color.rgb;
 				        contrib += throughput * (Le * w * brdf) / brdf_pdf;
-
 				        break;
 			        }
 
@@ -775,14 +804,11 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 			        previousNormal = normal;
 			        albedo = secondaryColor;
                 }
-                else
-                {
-                    break;
-                }
 		    }
         }
-
-        return contrib;
+        vec3 outContrib = mix(prevColorDepth.rgb, contrib, uInvRayCount);
+        imageStore(uScreenColorDepth, coord, vec4(outContrib, prevColorDepth.a));
+        return prevAlbedo * outContrib;
     }
 }
 

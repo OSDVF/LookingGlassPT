@@ -96,7 +96,7 @@ struct Material {
 
 	Material(glm::uint64 handle)
 	{
-		isTexture = 1;
+		isTexture = 1u;
 		this->colorOrHandle = glm::vec3(
 			glm::uintBitsToFloat((handle >> 32u) & 0xFFFFFFFFu),
 			glm::uintBitsToFloat(handle & 0xFFFFFFFFu), 0.f
@@ -105,8 +105,21 @@ struct Material {
 
 	Material(glm::vec3 color)
 	{
-		isTexture = 0;
+		isTexture = 0u;
 		this->colorOrHandle = color;
+	}
+
+	void setEmissive(glm::vec3 e)
+	{
+		if (e.x > 0 || e.y > 0 || e.z > 0)
+		{
+			isTexture |= 1u << 1u;
+		}
+		else
+		{
+			isTexture &= ~(1u << 1u);
+		}
+		emissive = e;
 	}
 };
 

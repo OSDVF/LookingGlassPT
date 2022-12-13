@@ -223,6 +223,7 @@ public:
 			ImGui::TreePop();
 			ImGui::DragFloat3("Position##Scene", &ProjectSettings::scene.position.x, .1f, -10000, 10000);
 			ImGui::DragFloat3("Rotation (deg)", &ProjectSettings::scene.rotationDeg.x, .1f, 0.f, 360.f - FLT_EPSILON);
+			ImGui::SliderFloat("Light Multiplier", &ProjectSettings::lightMultiplier, 0.1, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic);
 
 			if (ImGui::Button("(Re)load"))
 			{

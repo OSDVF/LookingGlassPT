@@ -7,6 +7,7 @@
 #include <array>
 #include <string>
 #include <limits>
+#include <random>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -56,7 +57,6 @@ public:
 		GLuint texture;
 	};
 	struct {
-		GLuint framebufferTexture;
 		GLint uTime;
 		GLint uWindowSize;
 		GLint uWindowPos;
@@ -66,11 +66,13 @@ public:
 		GLint uViewCone;
 		GLint uFocusDistance;
 		GLint uObjectCount;
-		GLint uRayParameters;
+		GLint uInvRayCount;
+		GLint uRayIndex;
 		BufferDefinition uCalibration;
 		BufferDefinition uObjects;
-		ImageDefinition uScreenAlbedoDepth;
-		ImageDefinition uScreenNormalDepth;
+		ImageDefinition uScreenAlbedo;
+		ImageDefinition uScreenNormal;
+		ImageDefinition uScreenColorDepth;
 		BufferDefinition Attribute;
 		BufferDefinition Triangles;
 		BufferDefinition Material;
@@ -95,6 +97,8 @@ public:
 	std::vector<GLuint> textureIds;
 	GLuint invalidHandle = -1u;
 	std::unordered_map<int, uint32_t> sceneMaterialIndices;
+
+	std::mt19937 randomGenerator;
 
 	ProjectWindow(const char* name, float x, float y, float w, float h, bool forceFlat = false)
 		: AppWindow(name, x, y, w, h)
@@ -140,9 +144,6 @@ public:
 		glNamedBufferData(fullScreenVertexBuffer, screenQuadVertices.size() * sizeof(glm::vec2), screenQuadVertices.data(), GL_STATIC_DRAW);
 		GlHelpers::setVertexAttrib(fullScreenVAO, 0, 2, GL_FLOAT, fullScreenVertexBuffer, 0, sizeof(glm::vec2));
 
-		//glEnable(GL_BLEND);
-		glBlendFuncSeparate(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA, GL_ZERO, GL_ZERO);
-		glBlendColor(1., 1., 1., 1.);
 		glUseProgram(program);
 		bindShaderInputs();
 		GLint blockSize;
@@ -181,19 +182,9 @@ public:
 		glBufferData(GL_SHADER_STORAGE_BUFFER, lights.size() * sizeof(Light), lights.data(), GL_STATIC_READ);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Lights.location, bufferHandles.lights);
 
-		createFullScreenImageBuffer(shaderInputs.uScreenAlbedoDepth.texture, shaderInputs.uScreenAlbedoDepth.unit);
-		createFullScreenImageBuffer(shaderInputs.uScreenNormalDepth.texture, shaderInputs.uScreenNormalDepth.unit);
-
-		// Create 16bit framebuffer because the colors would otherwise get crippled after a few path tracing iterations
-		glGenTextures(1, &shaderInputs.framebufferTexture);
-		glBindTexture(GL_TEXTURE_2D, shaderInputs.framebufferTexture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, windowWidth, windowHeight, 0, GL_RGBA, GL_FLOAT, NULL);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, shaderInputs.framebufferTexture, 0);
-		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-			std::cerr << "Framebuffer not complete!" << std::endl;
+		createFullScreenImageBuffer(shaderInputs.uScreenAlbedo.texture, shaderInputs.uScreenAlbedo.unit);
+		createFullScreenImageBuffer(shaderInputs.uScreenNormal.texture, shaderInputs.uScreenNormal.unit);
+		createFullScreenImageBuffer(shaderInputs.uScreenColorDepth.texture, shaderInputs.uScreenColorDepth.unit, GL_RGBA16F);
 
 		glBindVertexArray(fullScreenVAO);
 		glUniform1f(shaderInputs.uTime, 0);
@@ -208,20 +199,21 @@ public:
 		//loadTestScene();
 		updateBuffers();
 	}
-	void createFullScreenImageBuffer(GLuint& textureId, GLuint binding)
+
+	void createFullScreenImageBuffer(GLuint& textureId, GLuint binding, GLenum format = GL_RGBA8)
 	{
 		//Create the texture
 		glGenTextures(1, &textureId);
 		glBindTexture(GL_TEXTURE_2D, textureId);
-		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, windowWidth, windowHeight);
+		glTexStorage2D(GL_TEXTURE_2D, 1, format, windowWidth, windowHeight);
 		glBindTexture(GL_TEXTURE_2D, 0); //Unbind the texture
 
-		bindImage(textureId, binding);
+		bindImage(textureId, binding, format);
 	}
-	void bindImage(GLuint& textureId, GLuint binding)
+	void bindImage(GLuint& textureId, GLuint binding, GLenum format = GL_RGBA8)
 	{
 		//Use the texture as an image
-		glBindImageTexture(binding, textureId, 0, 0, 0, GL_READ_WRITE, GL_RGBA8);
+		glBindImageTexture(binding, textureId, 0, 0, 0, GL_READ_WRITE, format);
 	}
 
 	void createFlexibleBuffer(GLuint& bufferHandle, GLuint index, anyVector& buffer)
@@ -277,7 +269,6 @@ public:
 	void bindShaderInputs()
 	{
 		shaderInputs = {
-			0,
 			glGetUniformLocation(program, "uTime"),
 			glGetUniformLocation(program, "uWindowSize"),
 			glGetUniformLocation(program, "uWindowPos"),
@@ -287,7 +278,8 @@ public:
 			glGetUniformLocation(program, "uViewCone"),
 			glGetUniformLocation(program, "uFocusDistance"),
 			glGetUniformLocation(program, "uObjectCount"),
-			glGetUniformLocation(program, "uRayParameters"),
+			glGetUniformLocation(program, "uInvRayCount"),
+			glGetUniformLocation(program, "uRayIndex"),
 			{
 				glGetUniformBlockIndex(program, "CalibrationBuffer")
 			},
@@ -295,28 +287,32 @@ public:
 				glGetUniformBlockIndex(program, "ObjectBuffer")
 			},
 			{
-				glGetUniformLocation(program, "uScreenAlbedoDepth"),
+				glGetUniformLocation(program, "uScreenAlbedo"),
 				2
 			},
 			{
-				glGetUniformLocation(program, "uScreenNormalDepth"),
+				glGetUniformLocation(program, "uScreenNormal"),
 				3
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,  "AttributeBuffer"),
+				glGetUniformLocation(program, "uScreenColorDepth"),
 				4
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "TriangleBuffer"),
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,  "AttributeBuffer"),
 				5
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "MaterialBuffer"),
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "TriangleBuffer"),
 				6
 			},
 			{
-				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "LightBuffer"),
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "MaterialBuffer"),
 				7
+			},
+			{
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "LightBuffer"),
+				8
 			},
 		};
 		glGetActiveUniformBlockiv(program, shaderInputs.uCalibration.index, GL_UNIFORM_BLOCK_BINDING, &shaderInputs.uCalibration.location);
@@ -363,13 +359,15 @@ public:
 		glUniform2f(shaderInputs.uMouse, mouseX, mouseY);
 		if (ProjectSettings::pathTracing)
 		{
-			glUniform4ui(shaderInputs.uRayParameters, ProjectSettings::rayIteration, glm::uintBitsToFloat(std::rand()), glm::uintBitsToFloat(std::rand()), 0);
-			glBlendColor(1.f, 1.f, 1.f, 1.f / ((float)++rayIteration));
+			float rand1 = randomGenerator();
+			float rand2 = randomGenerator();
+			glUniform1f(shaderInputs.uInvRayCount, 1.f / ((float)rayIteration + 1.f));
+			glUniform1ui(shaderInputs.uRayIndex, ProjectSettings::rayIteration++);
 		}
 		else
 		{
-			glUniform4ui(shaderInputs.uRayParameters, 0, 0, 0, 0);
-			glBlendColor(1.f, 1.f, 1.f, 1.f);
+			glUniform1f(shaderInputs.uInvRayCount, 1.f);
+			glUniform1ui(shaderInputs.uRayIndex, 0u);
 		}
 
 		// Draw full screen quad with the path tracer shader
@@ -421,10 +419,12 @@ public:
 	}
 	void recreateBufferImages()
 	{
-		glDeleteTextures(1, &shaderInputs.uScreenAlbedoDepth.texture);
-		glDeleteTextures(1, &shaderInputs.uScreenNormalDepth.texture);
-		createFullScreenImageBuffer(shaderInputs.uScreenAlbedoDepth.texture, shaderInputs.uScreenAlbedoDepth.unit);
-		createFullScreenImageBuffer(shaderInputs.uScreenNormalDepth.texture, shaderInputs.uScreenNormalDepth.unit);
+		glDeleteTextures(1, &shaderInputs.uScreenAlbedo.texture);
+		glDeleteTextures(1, &shaderInputs.uScreenNormal.texture);
+		glDeleteTextures(1, &shaderInputs.uScreenColorDepth.texture);
+		createFullScreenImageBuffer(shaderInputs.uScreenAlbedo.texture, shaderInputs.uScreenAlbedo.unit);
+		createFullScreenImageBuffer(shaderInputs.uScreenNormal.texture, shaderInputs.uScreenNormal.unit);
+		createFullScreenImageBuffer(shaderInputs.uScreenColorDepth.texture, shaderInputs.uScreenColorDepth.unit, GL_RGBA16F);
 	}
 
 	std::string textureErrors;
@@ -628,8 +628,6 @@ public:
 	{
 		AppWindow::resized();
 		glUniform2f(shaderInputs.uWindowSize, windowWidth, windowHeight);
-		glBindTexture(GL_TEXTURE_2D, shaderInputs.framebufferTexture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, windowWidth, windowHeight, 0, GL_RGBA, GL_FLOAT, NULL);
 		recreateBufferImages();
 		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
 	}
@@ -891,7 +889,7 @@ public:
 		}
 		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_EMISSIVE, &emission))
 		{
-			newMat.emissive = GlHelpers::aiToGlm(emission);
+			newMat.setEmissive(GlHelpers::aiToGlm(emission * lightMultiplier));
 		}
 		materials.push_back(newMat);
 	}

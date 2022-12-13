@@ -28,4 +28,5 @@ namespace ProjectSettings {
 	inline bool pathTracing = false;
 	inline std::size_t rayIteration = 0;
 	inline bool interactive = false;
+	inline float lightMultiplier = 5.f;
 };
