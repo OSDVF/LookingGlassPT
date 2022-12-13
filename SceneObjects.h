@@ -111,15 +111,16 @@ struct Material {
 
 	void setEmissive(glm::vec3 e)
 	{
-		if (e.x > 0 || e.y > 0 || e.z > 0)
-		{
-			isTexture |= 1u << 1u;
-		}
-		else
-		{
-			isTexture &= ~(1u << 1u);
-		}
+		isTexture &= ~(1u << 1u);
 		emissive = e;
+	}
+	void setEmissive(glm::uint64 handle)
+	{
+		isTexture |= 1u << 1u;
+		this->emissive = glm::vec3(
+			glm::uintBitsToFloat((handle >> 32u) & 0xFFFFFFFFu),
+			glm::uintBitsToFloat(handle & 0xFFFFFFFFu), 0.f
+		);
 	}
 };
 

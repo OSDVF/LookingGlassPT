@@ -361,7 +361,7 @@ public:
 		{
 			float rand1 = randomGenerator();
 			float rand2 = randomGenerator();
-			glUniform1f(shaderInputs.uInvRayCount, 1.f / ((float)rayIteration + 1.f));
+			glUniform1f(shaderInputs.uInvRayCount, 1.f / ((float)rayIteration));
 			glUniform1ui(shaderInputs.uRayIndex, ProjectSettings::rayIteration++);
 		}
 		else
@@ -691,7 +691,7 @@ public:
 			return false;
 		}
 
-		gScene = importer.ReadFile(pFile.string(), aiProcessPreset_TargetRealtime_Quality | aiPostProcessSteps::aiProcess_FlipUVs);
+		gScene = importer.ReadFile(pFile.string(), aiProcessPreset_TargetRealtime_Quality | aiPostProcessSteps::aiProcess_FlipUVs | aiPostProcessSteps::aiProcess_FixInfacingNormals);
 
 		// If the import failed, report it
 		if (!gScene)
@@ -904,15 +904,16 @@ public:
 	void pushAttributes(const aiMesh* mesh, std::size_t& index, const aiMatrix4x4& transMat)
 	{
 		auto uvNum = getUvNum(mesh);
-		if (mesh->mNormals != nullptr)// If the mesh has vertex colors
+		auto normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
+		if (mesh->HasVertexColors(0))// If the mesh has vertex colors
 		{
-			auto norm = mesh->mNormals[index];
-			vertexAttrs.push(norm);
-		}
-		for (unsigned int c = 0; c < mesh->GetNumColorChannels(); c++)
-		{
-			auto col = mesh->mColors[c][index];
+			auto col = mesh->mColors[0][index];
 			vertexAttrs.push(col);
+		}
+		if (mesh->mNormals != nullptr)
+		{
+			auto norm = normalTransMat * mesh->mNormals[index];
+			vertexAttrs.push(norm);
 		}
 		for (unsigned int t = 0; t < uvNum; t++)
 		{
@@ -956,15 +957,16 @@ public:
 
 			std::size_t v = 0;
 			pushAttributes(mesh, v, transMat);
+			auto normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
 			if (mesh->mNormals != nullptr)
 			{
-				averageNormal = GlHelpers::aiToGlm(mesh->mNormals[v]);
+				averageNormal = GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v]);
 			}
 			for (v = 1; v < mesh->mNumVertices; v++)
 			{
 				pushAttributes(mesh, v, transMat);
 				float invVertNumber = 1.f / ((float)(v + 1.f));
-				averageNormal = glm::mix(GlHelpers::aiToGlm(mesh->mNormals[v]), averageNormal, invVertNumber);
+				averageNormal = glm::mix(GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v] ), averageNormal, invVertNumber);
 			}
 			// Construct triangle lookup table
 			for (std::size_t f = 0; f < mesh->mNumFaces; f++)
@@ -1009,7 +1011,7 @@ public:
 				Light currentLight = {
 					glm::mix(aabbMin, aabbMax, 0.5f),
 					areaSize,
-					averageNormal,
+					glm::normalize(averageNormal),
 					areaSize * areaSize,
 					glm::vec4(thisEmission,1.f),
 					objects.size()

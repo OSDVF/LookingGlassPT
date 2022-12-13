@@ -4,7 +4,7 @@
 
 #define PI 3.141592653589
 #ifndef NUM_BOUNCES
-#define NUM_BOUNCES 3
+#define NUM_BOUNCES 1
 #endif
 
 #ifdef FLAT_SCREEN
@@ -572,7 +572,6 @@ vec3 getMaterialColor(uint materialIndex, out vec3 emission, vec2 uv)
     {
         emission = vec3(uintBitsToFloat(uvec2(mat.samplerOrEmissionX,mat.samplerOrEmissionY)), mat.emissionZ);   
     }
-    
     return albedo;
 }
 
@@ -678,8 +677,7 @@ void updateGBuffer(vec3 albedo, vec3 normal, float depth, ivec2 coord)
 {
     imageStore(uScreenAlbedo, coord, vec4(albedo, 1.0));
     imageStore(uScreenNormal, coord, vec4(normal * 0.5 + 0.5, 1.0));
-    vec3 prevColor = imageLoad(uScreenColorDepth, coord).xyz;
-    imageStore(uScreenColorDepth, coord, vec4(prevColor, depth));
+    imageStore(uScreenColorDepth, coord, vec4(vec3(0.), depth));
 }
 
 vec3 sample_light(vec2 rng)
@@ -718,6 +716,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         }
         else
         {
+            updateGBuffer(vec3(0), vec3(0), 0, coord);
             if(planeDist > 0)
             {
                 return getPlaneColor(primaryRay, planeDist);
@@ -733,14 +732,15 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         vec3 previousNormal = imageLoad(uScreenNormal, coord).xyz * 2. - 1;
         vec4 prevColorDepth = imageLoad(uScreenColorDepth, coord);
         float depth = prevColorDepth.a;
-        vec3 throughput = vec3(1.0);
+        vec3 throughput = albedo;
 
         vec3 secondaryColor;
-        vec3 contrib = vec3(0);
+        vec3 contrib = prevColorDepth.rgb;
+        // Basically the alrogithm from https://www.shadertoy.com/view/4lfcDr
         for(int i = 0; i < NUM_BOUNCES; i++)
         {
             vec3 position = primaryRay.origin + primaryRay.direction * depth;
-            { // Next event estimation
+            { // Next event estimation (sample light)
 			    vec3 pos_ls = sample_light(get_random());
                 vec3 dirToLight = pos_ls - position;
 			    vec3 l_nee = dirToLight;
@@ -776,17 +776,17 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 				    }
 			    }
 		    }
-            { /* brdf */
+            { // Sample surface using BRDF
                 Ray secondary = createSecondaryRay(ndcCoord, position, previousNormal);
                 if(resolveRay(secondary, secondaryColor, normal, emission, depth))
                 {
-			        vec3 brdf = albedo.rgb / PI;
+			        vec3 brdf = secondaryColor.rgb / PI;
 
 			        float brdf_pdf = 1.0 / PI;
 
-			        if(emission.x > 0. || emission.y > 0. || emission.z > 0.) { /* hit light_source */
+			        if(emission.x > 0. || emission.y > 0. || emission.z > 0.) { // hit light_source
 				        float G = max(0.0, dot(secondary.direction, previousNormal)) * max(0.0, -dot(secondary.direction, normal)) / (depth * depth);
-				        if(G <= 0.0) /* hit back side of light source */
+				        if(G <= 0.0) // hit back side of light source
 					        break;
 
 				        float light_pdf = 1.0 / (lights[0].area * G);
@@ -804,11 +804,14 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 			        previousNormal = normal;
 			        albedo = secondaryColor;
                 }
+                else
+                {
+                    break;
+                }
 		    }
         }
-        vec3 outContrib = mix(prevColorDepth.rgb, contrib, uInvRayCount);
-        imageStore(uScreenColorDepth, coord, vec4(outContrib, prevColorDepth.a));
-        return prevAlbedo * outContrib;
+        imageStore(uScreenColorDepth, coord, vec4(contrib, prevColorDepth.a));
+        return contrib * uInvRayCount;
     }
 }
 
@@ -821,5 +824,5 @@ void main() {
     col = rayTraceSubPixel(vNDCpos);
 	
     // output
-	OutColor = vec4( col, 1.0 );
+	OutColor = vec4( pow(col, vec3(1.0 / 2.2)), 1.0 );
 }
