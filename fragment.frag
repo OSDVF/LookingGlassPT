@@ -4,7 +4,7 @@
 
 #define PI 3.141592653589
 #ifndef NUM_BOUNCES
-#define NUM_BOUNCES 5
+#define NUM_BOUNCES 3
 #endif
 
 #ifdef FLAT_SCREEN
@@ -673,10 +673,10 @@ bool resolveRay(Ray ray, out vec3 albedo, out vec3 normal, out vec3 emission, ou
     return resolveRay(ray, cameraFarPlane, albedo, normal, emission, depth);
 }
 
-void updateGBuffer(vec3 albedo, vec3 normal, float depth, ivec2 coord)
+void updateGBuffer(vec3 albedo, vec3 emission, vec3 normal, float depth, ivec2 coord)
 {
-    imageStore(uScreenAlbedo, coord, vec4(albedo, 1.0));
-    imageStore(uScreenNormal, coord, vec4(normal * 0.5 + 0.5, 1.0));
+    imageStore(uScreenAlbedo, coord, vec4(albedo, uintBitsToFloat(packHalf2x16(emission.xy))));//Albedo and emission factor
+    imageStore(uScreenNormal, coord, vec4(normal * 0.5 + 0.5, emission.z));
     imageStore(uScreenColorDepth, coord, vec4(vec3(0.), depth));
 }
 
@@ -706,7 +706,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         // This is primary ray
         if(resolveRay(primaryRay, albedo, normal, emission, depth))
         {
-            updateGBuffer(albedo, normal, depth, coord);
+            updateGBuffer(albedo, emission, normal, depth, coord);
             if(planeDist > 0 && depth > planeDist)
             {
                 // The object is behind the plane so make the plane 80% transparent
@@ -716,7 +716,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         }
         else
         {
-            updateGBuffer(vec3(0), vec3(0), 0, coord);
+            updateGBuffer(vec3(0), vec3(0), vec3(0), 0, coord);
             if(planeDist > 0)
             {
                 return getPlaneColor(primaryRay, planeDist);
@@ -727,9 +727,17 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
     else
     {
         // This is a secondary ray
-        vec3 prevAlbedo = imageLoad(uScreenAlbedo, coord).rgb;
+        vec4 prevAlbedoEmission = imageLoad(uScreenAlbedo, coord);
+        vec3 prevAlbedo = prevAlbedoEmission.rgb;
         vec3 albedo = prevAlbedo;
-        vec3 previousNormal = imageLoad(uScreenNormal, coord).xyz * 2. - 1;
+        vec4 previousNormalEmission = imageLoad(uScreenNormal, coord);
+        vec3 previousNormal = previousNormalEmission.rgb * 2. - 1;
+        vec3 emission = vec3(unpackHalf2x16(floatBitsToUint(prevAlbedoEmission.a)), previousNormalEmission.a);
+        if(emission.r > 0 || emission.g > 0 || emission.b > 0)
+        {
+            return max(emission,1.0);
+        }
+
         vec4 prevColorDepth = imageLoad(uScreenColorDepth, coord);
         float depth = prevColorDepth.a;
         vec3 throughput = albedo;
