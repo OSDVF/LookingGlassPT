@@ -68,8 +68,8 @@ int main(int argc, const char** argv)
 	IMGUI_CHECKVERSION();
 
 	std::array<AppWindow*, 2> windows = {
-	new ControlWindow(windows, "Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H, debug),
-	new ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 1.5, forceFlat),
+	new ProjectWindow("Looking Glass Example", WINDOW_X + WINDOW_W, WINDOW_Y, WINDOW_W * 2, WINDOW_H * 1.5),
+	new ControlWindow(windows, "Looking Glass Path Tracer Control", WINDOW_X, WINDOW_Y, WINDOW_W, WINDOW_H, debug, forceFlat),
 	};
 
 	std::array<std::deque<SDL_Event>, windows.size()> eventQueues;
@@ -121,7 +121,7 @@ int main(int argc, const char** argv)
 								window->renderOnEvent(events);
 								window->flushRender();
 							}
-							else if(wholeAppPowerSave)
+							else if (wholeAppPowerSave)
 							{
 								std::unique_lock lk(powerSaveMut);
 								renderWait.wait(lk);

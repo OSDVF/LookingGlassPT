@@ -3,8 +3,8 @@
 //#extension GL_ARB_gpu_shader_int64 : enable
 
 #define PI 3.141592653589
-#ifndef NUM_BOUNCES
-#define NUM_BOUNCES 3
+#ifndef MAX_BOUNCES
+#define MAX_BOUNCES 3
 #endif
 
 #ifdef FLAT_SCREEN
@@ -83,6 +83,9 @@ uniform float uFocusDistance = 10;
 
 uniform float uInvRayCount = 1.;
 uniform uint uRayIndex = 0;
+uniform float uRayOffset = 1e-5;
+uniform uint uSubpI = 0;
+uint subpI = uSubpI;
 
 layout(std430, binding = 5) readonly buffer AttributeBuffer {
     float[] dynamicVertexAttrs;
@@ -154,8 +157,6 @@ struct Hit {
     vec3 normal;
 };
 
-int subpI;
-
 // https://www.shadertoy.com/view/4lfcDr
 vec2
 sample_disk(vec2 uv)
@@ -222,7 +223,7 @@ Ray createSecondaryRay(vec2 coord, vec3 pos, vec3 normal)
     mat3 onb = construct_ONB_frisvad(normal);
     vec3 dir = normalize(onb * sample_cos_hemisphere(randomValues));
     Ray ray_next = Ray(pos, dir);
-	ray_next.origin += normal * 0.01 * dir;//Offset to prevent self-blocking
+	ray_next.origin += normal * uRayOffset;//Offset to prevent self-blocking
     return ray_next;
 }
 
@@ -746,7 +747,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         vec3 secondaryColor;
         vec3 contrib = prevColorDepth.rgb;
         // Basically the alrogithm from https://www.shadertoy.com/view/4lfcDr
-        for(int i = 0; i < NUM_BOUNCES; i++)
+        for(int i = 0; i < MAX_BOUNCES; i++)
         {
             Light light = lights[0];
             vec3 position = primaryRay.origin + primaryRay.direction * depth;
@@ -827,12 +828,15 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 
 void main() {
     vec3 col = vec3(0);
-    /*for(subpI = 0; subpI < 3; subpI++)
+    #if defined(SUBPIXEL_ONE_PASS) && !defined(FLAT_SCREEN)
+    for(subpI = 0; subpI < 3; subpI++)
     {
         col[subpI] = rayTraceSubPixel(vNDCpos)[subpI];
-    }*/
+    }
+    #else
     col = rayTraceSubPixel(vNDCpos);
+    #endif
 	
-    // output
+    // gamma correction
 	OutColor = vec4( pow(col, vec3(1.0 / 2.2)), 1.0 );
 }

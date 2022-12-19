@@ -1,7 +1,5 @@
 #pragma once
 #include <SDL.h>
-#include "UsbCalibration.h"
-#include "BridgeCalibration.h"
 #include <fstream>
 #include <sstream>
 #include <array>
@@ -26,17 +24,14 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#include "alert_exception.h"
 
 using namespace ProjectSettings;
 class ProjectWindow : public AppWindow {
 public:
-	std::string calibrationAlert;
 	GLuint fShader;
 	GLuint fFlatShader;
 	GLuint vShader;
 	GLuint program;
-	Calibration calibration;
 	GLuint fullScreenVAO;
 	GLuint fullScreenVertexBuffer;
 	GLuint uCalibrationHandle;
@@ -68,6 +63,8 @@ public:
 		GLint uObjectCount;
 		GLint uInvRayCount;
 		GLint uRayIndex;
+		GLint uRayOffset;
+		GLint uSubpI;
 		BufferDefinition uCalibration;
 		BufferDefinition uObjects;
 		ImageDefinition uScreenAlbedo;
@@ -100,21 +97,10 @@ public:
 
 	std::mt19937 randomGenerator;
 
-	ProjectWindow(const char* name, float x, float y, float w, float h, bool forceFlat = false)
+	ProjectWindow(const char* name, float x, float y, float w, float h)
 		: AppWindow(name, x, y, w, h)
 	{
 		eventDriven = false;
-
-		std::cout << "Pixel scale: " << this->pixelScale << std::endl;
-		if (forceFlat)
-		{
-			std::cout << "Forced flat screen." << std::endl;
-			GlobalScreenType = ScreenType::Flat;
-		}
-		else
-		{
-			extractCalibration();
-		}
 	}
 
 	// Runs on the render thread
@@ -146,18 +132,9 @@ public:
 
 		glUseProgram(program);
 		bindShaderInputs();
-		GLint blockSize;
-		glGetActiveUniformBlockiv(program, shaderInputs.uCalibration.index, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
-
-		auto calibrationForShader = calibration.forShader();
-		if (blockSize != sizeof(calibrationForShader))
-		{
-			std::cerr << "Bad shader memory layout. Calibration block is " << blockSize << " bytes, but should be " << sizeof(calibrationForShader) << std::endl;
-		}
 
 		glGenBuffers(1, &uCalibrationHandle);
 		glBindBuffer(GL_UNIFORM_BUFFER, uCalibrationHandle);
-		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_READ);
 		glBindBufferBase(GL_UNIFORM_BUFFER, shaderInputs.uCalibration.location, uCalibrationHandle);//For explanation: https://stackoverflow.com/questions/54955186/difference-between-glbindbuffer-and-glbindbufferbase
 
 		glGenBuffers(1, &bufferHandles.objects);
@@ -213,7 +190,7 @@ public:
 	void bindImage(GLuint& textureId, GLuint binding, GLenum format = GL_RGBA8)
 	{
 		//Use the texture as an image
-		glBindImageTexture(binding, textureId, 0, 0, 0, GL_READ_WRITE, format);
+		glBindImageTexture(binding, textureId, 0, GL_FALSE, 0, GL_READ_WRITE, format);
 	}
 
 	void createFlexibleBuffer(GLuint& bufferHandle, GLuint index, anyVector& buffer)
@@ -235,37 +212,6 @@ public:
 		glNamedBufferData(bufferHandle, buffer.size() * sizeof(T), buffer.data(), GL_STATIC_READ);
 	}
 
-	/**
-	* Sets calibration and ScreenType
-	*/
-	void extractCalibration()
-	{
-		GlobalScreenType = ScreenType::Flat;
-		try {
-			try {
-				std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
-				calibration = BridgeCalibration().getCalibration();
-			}
-			catch (const std::runtime_error& e)
-			{
-				std::cerr << e.what() << std::endl;
-				std::cout << "Trying USB calibration..." << std::endl;
-				calibration = UsbCalibration().getCalibration();
-			}
-			GlobalScreenType = ScreenType::LookingGlass;
-			std::cout << "Calibration success: " << std::endl << calibration;
-		}
-		catch (const alert_exception& e)
-		{
-			calibrationAlert = e.what();
-		}
-		catch (const std::exception& e)
-		{
-			std::cerr << e.what() << std::endl;
-			std::cerr << "Calibration failed. Displaying flat screen version. LG version will use default values." << std::endl;
-		}
-	}
-
 	void bindShaderInputs()
 	{
 		shaderInputs = {
@@ -280,6 +226,8 @@ public:
 			glGetUniformLocation(program, "uObjectCount"),
 			glGetUniformLocation(program, "uInvRayCount"),
 			glGetUniformLocation(program, "uRayIndex"),
+			glGetUniformLocation(program, "uRayOffset"),
+			glGetUniformLocation(program, "uSubpI"),
 			{
 				glGetUniformBlockIndex(program, "CalibrationBuffer")
 			},
@@ -339,13 +287,13 @@ public:
 		}
 
 		std::string fragSource = Helpers::relativeToExecutable("fragment.frag").string();
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, {});
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN" });
+		auto bouncesDefine = std::format("MAX_BOUNCES {}", maxBounces);
+		auto subpixelOnePassDefine = std::string(subpixelOnePass ? "SUBPIXEL_ONE_PASS" : "SUBPIXEL_MULTI_PASS");
+		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine });
+		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine });
 		glAttachShader(program, GlobalScreenType == ScreenType::Flat ? fFlatShader : fShader);
 	}
 
-	const char* textureLoadingFailed = "Failed to load a texture";
-	const char* sceneLoadingFailed = "Failed to load scene";
 	void render() override
 	{
 		ui();
@@ -357,12 +305,36 @@ public:
 		glUniform1f(shaderInputs.uViewCone, glm::radians(viewCone));
 		glUniform1f(shaderInputs.uFocusDistance, focusDistance);
 		glUniform2f(shaderInputs.uMouse, mouseX, mouseY);
+		if (!ProjectSettings::subpixelOnePass)
+		{
+			switch (currentSubpixel)
+			{
+			case 0:
+				glColorMask(GL_TRUE, GL_FALSE, GL_FALSE, GL_FALSE);
+				break;
+			case 1:
+				glColorMask(GL_FALSE, GL_TRUE, GL_FALSE, GL_FALSE);
+				break;
+			case 2:
+				glColorMask(GL_FALSE, GL_FALSE, GL_TRUE, GL_FALSE);
+				break;
+			}
+			glUniform1ui(shaderInputs.uSubpI, currentSubpixel);
+			currentSubpixel++;
+			if (currentSubpixel >= 3)
+			{
+				currentSubpixel = 0;
+			}
+		}
 		if (ProjectSettings::pathTracing)
 		{
-			float rand1 = randomGenerator();
-			float rand2 = randomGenerator();
 			glUniform1f(shaderInputs.uInvRayCount, 1.f / ((float)rayIteration));
-			glUniform1ui(shaderInputs.uRayIndex, ProjectSettings::rayIteration++);
+			glUniform1ui(shaderInputs.uRayIndex, ProjectSettings::rayIteration += currentSubpixel / 2);
+			glUniform1f(shaderInputs.uRayOffset, rayOffset);
+			if (rayIteration > maxIterations)
+			{
+				ProjectSettings::pathTracing = false;
+			}
 		}
 		else
 		{
@@ -371,7 +343,7 @@ public:
 		}
 
 		// Draw full screen quad with the path tracer shader
-		if (ProjectSettings::pathTracing || ProjectSettings::rayIteration == 0)
+		if (ProjectSettings::pathTracing || rayIteration == 0)
 		{
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		}
@@ -394,11 +366,13 @@ public:
 		}
 	}
 
-	float f;
-	int counter = 0;
 	float frame = 1;
 	bool focal = false;
 	bool fullscreen = false;
+	std::string textureErrors;
+	const char* textureLoadingFailed = "Failed to load a texture";
+	const char* sceneLoadingFailed = "Failed to load scene";
+	std::size_t currentSubpixel = 0;
 
 	void applyScreenType()
 	{
@@ -427,14 +401,8 @@ public:
 		createFullScreenImageBuffer(shaderInputs.uScreenColorDepth.texture, shaderInputs.uScreenColorDepth.unit, GL_RGBA16F);
 	}
 
-	std::string textureErrors;
 	void ui()
 	{
-		const char* calibrationAlertText = "Calibration Warning";
-		if (!calibrationAlert.empty())
-		{
-			ImGui::OpenPopup(calibrationAlertText);
-		}
 		if (ProjectSettings::applyScreenType)
 		{
 			ProjectSettings::applyScreenType = false;
@@ -445,9 +413,15 @@ public:
 			recompileFShaders = false;
 			recompileFragmentSh();
 			GlHelpers::linkProgram(program);
+			glUseProgram(program);
 			bindShaderInputs();
 			recreateBufferImages();
 			glUniform2f(shaderInputs.uWindowSize, windowWidth, windowHeight);
+			if (subpixelOnePass)
+			{
+				glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+				currentSubpixel = 2; //Because rayIteration is incremented by currentSubpixel/2 when doing path tracing
+			}
 			updateBuffers();
 		}
 		if (ProjectSettings::reloadScene)
@@ -483,6 +457,9 @@ public:
 		}
 		if (ImGui::BeginPopup(textureLoadingFailed))
 		{
+			// Enforce minimum automatic window width
+			ImGui::SetCursorPosX(windowWidth / 2);
+			ImGui::SetCursorPosX(0.0f);
 			ImGui::TextWrapped(textureErrors.c_str());
 			if (ImGui::Button("Close"))
 			{
@@ -492,6 +469,9 @@ public:
 		}
 		if (ImGui::BeginPopup(sceneLoadingFailed))
 		{
+			// Enforce minimum automatic window width
+			ImGui::SetCursorPosX(windowWidth / 2);
+			ImGui::SetCursorPosX(0.0f);
 			ImGui::TextWrapped("Encountered error when loading scene");
 			if (ImGui::Button("Close"))
 			{
@@ -499,19 +479,23 @@ public:
 			}
 			ImGui::EndPopup();
 		}
+
 		ImGui::Begin("Info");
 		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 		ImGui::End();
-		if (ImGui::BeginPopup(calibrationAlertText))
+	}
+
+	void updateCalibrationBuffer()
+	{
+		glBindBuffer(GL_UNIFORM_BUFFER, uCalibrationHandle);
+		auto calibrationForShader = calibration.forShader();
+		GLint blockSize;
+		glGetActiveUniformBlockiv(program, shaderInputs.uCalibration.index, GL_UNIFORM_BLOCK_DATA_SIZE, &blockSize);
+		if (blockSize != sizeof(calibrationForShader))
 		{
-			ImGui::TextWrapped(calibrationAlert.c_str());
-			if (ImGui::Button("Close"))
-			{
-				calibrationAlert.clear();
-				ImGui::CloseCurrentPopup();
-			}
-			ImGui::EndPopup();
+			std::cerr << "Bad shader memory layout. Calibration block is " << blockSize << " bytes, but should be " << sizeof(calibrationForShader) << std::endl;
 		}
+		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_READ);
 	}
 
 	void updateBuffers()
@@ -520,6 +504,7 @@ public:
 		updateFlexibleBuffer(bufferHandles.triangles, triangles);
 		updateFlexibleBuffer(bufferHandles.material, materials);
 		updateFlexibleBuffer(bufferHandles.lights, lights);
+		updateCalibrationBuffer();
 		submitObjectBuffer();
 	}
 
@@ -621,6 +606,7 @@ public:
 		glAttachShader(program, after);
 		GlHelpers::linkProgram(program);
 		bindShaderInputs();
+		updateBuffers();
 		glUniform2f(shaderInputs.uWindowSize, windowWidth, windowHeight);
 	}
 
@@ -761,6 +747,20 @@ public:
 					std::reference_wrapper(invalidHandle), GLuint64(-1)
 				)); //fill map with texture paths, handles are still pseudo-NULL yet
 			}
+
+			texCount = material->GetTextureCount(aiTextureType_EMISSIVE);
+			std::cout << "has " << texCount << " emissive textures." << std::endl;
+			for (int texIndex = 0; texIndex < texCount; texIndex++)
+			{
+				if (material->GetTexture(aiTextureType_EMISSIVE, texIndex, &path) != aiReturn_SUCCESS)
+				{
+					std::cerr << "texture " << texIndex << " not loaded" << std::endl;
+					continue;
+				}
+				textureHandleMap.emplace(path.data, std::make_tuple(
+					std::reference_wrapper(invalidHandle), GLuint64(-1)
+				)); //fill map with texture paths, handles are still pseudo-NULL yet
+			}
 		}
 
 		const size_t numTextures = textureHandleMap.size();
@@ -777,13 +777,10 @@ public:
 		std::filesystem::path sceneDir = std::filesystem::absolute(ProjectSettings::scene.path).parent_path();
 		for (size_t i = 0; i < numTextures; i++, itr++)
 		{
-			//save IL image ID
 			std::string filename = (*itr).first;		// get filename
 			std::get<0>((*itr).second) = textureIds[i]; // save texture id for filename in map
 
-			//ilBindImage(imageIds[i]); /* Binding of DevIL image name */
 			std::filesystem::path fileloc = sceneDir / filename;	/* Loading of image */
-			//success = ilLoadImage(fileloc.c_str());
 			int w, h, channelsCount;
 			GLenum format = 0;
 			GLint internalFormat = 0;
@@ -793,11 +790,11 @@ public:
 			{
 			case 4:
 				format = GL_RGBA;
-				internalFormat = GL_COMPRESSED_RGBA;
+				internalFormat = GL_COMPRESSED_SRGB_ALPHA;
 				break;
 			case 3:
 				format = GL_RGB;
-				internalFormat = GL_COMPRESSED_RGB;
+				internalFormat = GL_COMPRESSED_SRGB;
 				break;
 			case 2:
 				format = GL_RG;
@@ -818,7 +815,7 @@ public:
 				auto& currentTex = textureIds[i];
 				// redefine standard texture values
 				// We will use linear interpolation for magnification filter
-				glTextureImage2DEXT(currentTex, GL_TEXTURE_2D, 0, internalFormat, w, h, 0, format, GL_UNSIGNED_BYTE, data);
+				glTextureImage2DEXT(currentTex, GL_TEXTURE_2D, 0, internalFormat, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
 				glTextureParameteri(currentTex, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 				// We will use linear interpolation for minifying filter
 				glTextureParameteri(currentTex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -864,20 +861,12 @@ public:
 		int texIndex = 0;
 		aiString texPath;	//contains filename of texture
 		Material newMat;
-		if (AI_SUCCESS == mtl->GetTexture(aiTextureType_DIFFUSE, texIndex, &texPath))
+		if (AI_SUCCESS == mtl->GetTexture(aiTextureType_DIFFUSE, texIndex, &texPath) && CheckTextureExistence(texPath, mtl))
 		{
-			//bind texture
-			if (!textureHandleMap.contains(texPath.data))
-			{
-				std::cerr << "Material " << mtl->GetName().C_Str() << " needs texture " << texPath.C_Str() << " but it wasn't loaded properly." << std::endl;
-				return;
-			}
-			auto& handles = textureHandleMap.at(texPath.data);
-			auto& texId = std::get<0>(handles);
-			auto& texHandle = std::get<1>(handles);
-			// create a handle for bindless texture shader
-			auto newMat = Material(texHandle);
-			materials.push_back(newMat);
+			auto& handleAndId = textureHandleMap.at(texPath.data);
+			auto& texHandle = std::get<1>(handleAndId);
+			// pass a handle to a bindless texture in the material
+			newMat = Material(texHandle);
 		}
 		else if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_DIFFUSE, &diffuse))
 		{
@@ -887,11 +876,27 @@ public:
 			);
 			newMat.transparency = diffuse.a;
 		}
-		if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_EMISSIVE, &emission))
+		if (AI_SUCCESS == aiGetMaterialTexture(mtl, aiTextureType_EMISSIVE, texIndex, &texPath) && CheckTextureExistence(texPath, mtl))
+		{
+			auto& handleAndId = textureHandleMap.at(texPath.data);
+			auto& texHandle = std::get<1>(handleAndId);
+			newMat.setEmissive(texHandle);
+		}
+		else if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_EMISSIVE, &emission))
 		{
 			newMat.setEmissive(GlHelpers::aiToGlm(emission * lightMultiplier));
 		}
 		materials.push_back(newMat);
+	}
+
+	bool CheckTextureExistence(aiString& texPath, const aiMaterial* mtl)
+	{
+		if (!textureHandleMap.contains(texPath.data))
+		{
+			std::cerr << "Material " << mtl->GetName().C_Str() << " needs texture " << texPath.C_Str() << " but it wasn't loaded properly." << std::endl;
+			return false;
+		}
+		return true;
 	}
 
 	int getUvNum(const aiMesh* mesh)
@@ -904,7 +909,7 @@ public:
 	void pushAttributes(const aiMesh* mesh, std::size_t& index, const aiMatrix4x4& transMat)
 	{
 		auto uvNum = getUvNum(mesh);
-		auto normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
+		auto& normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
 		if (mesh->HasVertexColors(0))// If the mesh has vertex colors
 		{
 			auto col = mesh->mColors[0][index];
@@ -957,7 +962,7 @@ public:
 
 			std::size_t v = 0;
 			pushAttributes(mesh, v, transMat);
-			auto normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
+			auto& normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
 			if (mesh->mNormals != nullptr)
 			{
 				averageNormal = GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v]);
@@ -966,7 +971,7 @@ public:
 			{
 				pushAttributes(mesh, v, transMat);
 				float invVertNumber = 1.f / ((float)(v + 1.f));
-				averageNormal = glm::mix(GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v] ), averageNormal, invVertNumber);
+				averageNormal = glm::mix(GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v]), averageNormal, invVertNumber);
 			}
 			// Construct triangle lookup table
 			for (std::size_t f = 0; f < mesh->mNumFaces; f++)
@@ -1006,17 +1011,31 @@ public:
 			auto thisEmission = materials[materialIndex].emissive;
 			if (thisEmission != glm::vec3(0))
 			{
-				// If this object is emissive, treat is as a light
 				auto areaSize = glm::distance(aabbMin, aabbMax);
-				Light currentLight = {
-					glm::mix(aabbMin, aabbMax, 0.5f),
-					areaSize,
-					glm::normalize(averageNormal),
-					areaSize * areaSize,
-					glm::vec4(thisEmission,1.f),
-					objects.size()
-				};
-				lights.push_back(currentLight);
+				if (materials[materialIndex].isTexture & 2)
+				{
+					lights.push_back(Light(
+						glm::mix(aabbMin, aabbMax, 0.5f),
+						areaSize,
+						glm::normalize(averageNormal),
+						areaSize * areaSize,
+						lightMultiplier * glm::vec4(1),
+						objects.size()
+					));
+				}
+				else
+				{
+					// If this object is emissive, treat is as a light
+					Light currentLight = {
+						glm::mix(aabbMin, aabbMax, 0.5f),
+						areaSize,
+						glm::normalize(averageNormal),
+						areaSize * areaSize,
+						glm::vec4(thisEmission,1.f),
+						objects.size()
+					};
+					lights.push_back(currentLight);
+				}
 			}
 			objects.push_back(SceneObject(
 				materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,

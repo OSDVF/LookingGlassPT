@@ -1,7 +1,10 @@
 #pragma once
 #include "AppWindow.h"
 #include "Settings.h"
+#include "UsbCalibration.h"
+#include "BridgeCalibration.h"
 #include "GlHelpers.h"
+#include "alert_exception.h"
 #include <imgui.h>
 #include <array>
 #include <nfd.h>
@@ -17,13 +20,25 @@ template <size_t count>
 class ControlWindow : public AppWindow {
 public:
 	std::array<AppWindow*, count>& allWindows;
+	std::string calibrationAlert;
+	std::string calibratedBy = "";
 	bool debug;
-	ControlWindow(std::array<AppWindow*, count>& allWindows, const char* name, float x, float y, float w, float h, bool debug) :
+	ControlWindow(std::array<AppWindow*, count>& allWindows, const char* name, float x, float y, float w, float h, bool debug, bool forceFlat = false) :
 		AppWindow(name, x, y, w, h), allWindows(allWindows), debug(debug)
 	{
 		if (!debug)
 		{
 			ProjectSettings::debugOutput = DEBUG_SEVERITY_NOTHING;
+		}
+		std::cout << "Pixel scale: " << this->pixelScale << std::endl;
+		if (forceFlat)
+		{
+			std::cout << "Forced flat screen." << std::endl;
+			ProjectSettings::GlobalScreenType = ProjectSettings::ScreenType::Flat;
+		}
+		else
+		{
+			extractCalibration();
 		}
 	}
 
@@ -73,11 +88,13 @@ public:
 			};
 			ProjectSettings::debugOutput = indexToSeverity[level];
 		}
+		int step = 1;
+		int bigStep = 10; // No step on snek
 		if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			if (ProjectSettings::pathTracing)
 			{
-				if (ImGui::Button("Stop Path Tracing"))
+				if (ImGui::Button("Pause Path Tracing"))
 				{
 					ProjectSettings::pathTracing = false;
 				}
@@ -86,7 +103,13 @@ public:
 			}
 			else
 			{
-				if (ImGui::Button("Start Path Tracing"))
+				ImGui::InputScalar("Max Iterations", ImGuiDataType_U64, &ProjectSettings::maxIterations, &step, &bigStep);
+				if (ImGui::InputScalar("Max Ray Bounces", ImGuiDataType_U64, &ProjectSettings::maxBounces, &step, &bigStep))
+				{
+					ProjectSettings::recompileFShaders = true;
+				}
+				ImGui::InputFloat("Ray Offset", &ProjectSettings::rayOffset, 1e-5, 0, "%g");
+				if (ImGui::Button("Start/Resume Path Tracing"))
 				{
 					ProjectSettings::pathTracing = true;
 					ProjectSettings::interactive = false;
@@ -104,6 +127,21 @@ public:
 		if (ImGui::RadioButton("Looking Glass", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::LookingGlass))
 		{
 			ProjectSettings::applyScreenType = true;
+		}
+		if (ProjectSettings::GlobalScreenType == ProjectSettings::ScreenType::LookingGlass)
+		{
+			ImGui::TreePush();
+			ImGui::Text("Calibrated by: %s", calibratedBy.c_str());
+			if (ImGui::Button("Retry Calibration"))
+			{
+				extractCalibration();
+				ProjectSettings::recompileFShaders = true;
+			}
+			if(ImGui::Checkbox("All subpixels in one pass", &ProjectSettings::subpixelOnePass))
+			{
+				ProjectSettings::recompileFShaders = true;
+			}
+			ImGui::TreePop();
 		}
 		if (ImGui::RadioButton("Flat", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::Flat))
 		{
@@ -130,7 +168,7 @@ public:
 			}
 		}
 		bool headerDrawn = false;
-		for (int i = 1; i < allWindows.size(); i++)
+		for (int i = 0; i < allWindows.size(); i++)
 		{
 			auto& window = allWindows[i];
 			if (window != nullptr && window->hidden)
@@ -230,8 +268,24 @@ public:
 				ProjectSettings::reloadScene = true;
 			}
 			ImGui::TreePop();
-			int step = 1;
 			ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &ProjectSettings::objectCountLimit, &step);
+		}
+
+
+		const char* calibrationAlertText = "Calibration Warning";
+		if (!calibrationAlert.empty())
+		{
+			ImGui::OpenPopup(calibrationAlertText);
+		}
+		if (ImGui::BeginPopup(calibrationAlertText))
+		{
+			ImGui::TextWrapped(calibrationAlert.c_str());
+			if (ImGui::Button("Close"))
+			{
+				calibrationAlert.clear();
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
 		}
 
 		ImGui::End();
@@ -249,5 +303,39 @@ public:
 			break;
 		}
 		return false;
+	}
+
+	/**
+	* Sets calibration and ScreenType
+	*/
+	void extractCalibration()
+	{
+		ProjectSettings::GlobalScreenType = ProjectSettings::ScreenType::Flat;
+		try {
+			try {
+				std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
+				ProjectSettings::calibration = BridgeCalibration().getCalibration();
+				calibratedBy = "Looking Glass Bridge";
+			}
+			catch (const std::runtime_error& e)
+			{
+				std::cout << "Trying USB calibration..." << std::endl;
+				ProjectSettings::calibration = UsbCalibration().getCalibration();
+				calibratedBy = "USB Interface";
+				std::cerr << e.what() << std::endl;
+			}
+			ProjectSettings::GlobalScreenType = ProjectSettings::ScreenType::LookingGlass;
+			std::cout << "Calibration success: " << std::endl << ProjectSettings::calibration;
+		}
+		catch (const alert_exception& e)
+		{
+			calibrationAlert = e.what();
+		}
+		catch (const std::exception& e)
+		{
+			std::cerr << e.what() << std::endl;
+			std::cerr << "Calibration failed. Displaying flat screen version. LG version will use default values." << std::endl;
+			calibratedBy = "Error";
+		}
 	}
 };
