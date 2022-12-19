@@ -92,8 +92,8 @@ void AppWindow::renderOnEvent(std::deque<SDL_Event> events)
 
 void AppWindow::processImGuiEvent(SDL_Event& event)
 {
-#if DEBUG
-	if (event.type != SDL_FIRSTEVENT && event.type != SDL_POLLSENTINEL)
+#ifdef _DEBUG
+	if (debugEvents && event.type != SDL_FIRSTEVENT && event.type != SDL_POLLSENTINEL)
 	{
 		sdlEventToSdlLog(event);
 	}

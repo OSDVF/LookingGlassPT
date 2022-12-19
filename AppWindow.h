@@ -20,6 +20,9 @@ public:
 	float windowHeight;
 	float windowPosX;
 	float windowPosY;
+#ifdef _DEBUG
+	bool debugEvents = false;
+#endif
 	// Event-driven windows are power-saving and are getting renderOnEvent(), other are getting render() every frame
 	bool eventDriven = true;
 	Uint32 windowID;

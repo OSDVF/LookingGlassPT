@@ -305,7 +305,7 @@ public:
 		glUniform1f(shaderInputs.uViewCone, glm::radians(viewCone));
 		glUniform1f(shaderInputs.uFocusDistance, focusDistance);
 		glUniform2f(shaderInputs.uMouse, mouseX, mouseY);
-		if (!ProjectSettings::subpixelOnePass)
+		if (!ProjectSettings::subpixelOnePass && GlobalScreenType == ScreenType::LookingGlass)
 		{
 			switch (currentSubpixel)
 			{
@@ -372,7 +372,7 @@ public:
 	std::string textureErrors;
 	const char* textureLoadingFailed = "Failed to load a texture";
 	const char* sceneLoadingFailed = "Failed to load scene";
-	std::size_t currentSubpixel = 0;
+	std::size_t currentSubpixel = 2;
 
 	void applyScreenType()
 	{
@@ -540,6 +540,7 @@ public:
 				break;
 			case SDLK_ESCAPE:
 				hide();
+				break;
 			case SDLK_f:
 				fullscreen = !fullscreen;
 				if (fullscreen)

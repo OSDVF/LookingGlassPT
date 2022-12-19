@@ -36,4 +36,5 @@ namespace ProjectSettings {
 	inline float lightMultiplier = 5.f;
 	inline float rayOffset = 1e-5f;
 	inline bool subpixelOnePass = false;
+	inline bool fpsWindow = false;
 };

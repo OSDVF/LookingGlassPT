@@ -28,6 +28,7 @@ public:
 	{
 		if (!debug)
 		{
+			ProjectSettings::fpsWindow = true;
 			ProjectSettings::debugOutput = DEBUG_SEVERITY_NOTHING;
 		}
 		std::cout << "Pixel scale: " << this->pixelScale << std::endl;
@@ -54,39 +55,53 @@ public:
 		ImGui::Begin("Settings", 0, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);                          // Create a window called "Hello, world!" and append into it.
 		if (debug)
 		{
-			const char* const severities[] = {
-				"Everything",
-				"Low or higher",
-				"Medium or high",
-				"High",
-				"None"
-			};
-			int level;
-			switch (ProjectSettings::debugOutput)
+			if (ImGui::TreeNode("Debug"))
 			{
-			case GL_DEBUG_SEVERITY_NOTIFICATION:
-				level = 0;
-				break;
-			case GL_DEBUG_SEVERITY_LOW:
-				level = 1;
-				break;
-			case GL_DEBUG_SEVERITY_MEDIUM:
-				level = 2;
-				break;
-			case GL_DEBUG_SEVERITY_HIGH:
-				level = 3;
-				break;
-			default:
-				level = 4;
+				const char* const severities[] = {
+					"Everything",
+					"Low or higher",
+					"Medium or high",
+					"High",
+					"None"
+				};
+				int level;
+				switch (ProjectSettings::debugOutput)
+				{
+				case GL_DEBUG_SEVERITY_NOTIFICATION:
+					level = 0;
+					break;
+				case GL_DEBUG_SEVERITY_LOW:
+					level = 1;
+					break;
+				case GL_DEBUG_SEVERITY_MEDIUM:
+					level = 2;
+					break;
+				case GL_DEBUG_SEVERITY_HIGH:
+					level = 3;
+					break;
+				default:
+					level = 4;
+				}
+				ImGui::Combo("GL Debug Level", &level, severities, 5);
+				GLenum indexToSeverity[] = { GL_DEBUG_SEVERITY_NOTIFICATION,
+					GL_DEBUG_SEVERITY_LOW,
+					GL_DEBUG_SEVERITY_MEDIUM,
+					GL_DEBUG_SEVERITY_HIGH,
+					DEBUG_SEVERITY_NOTHING
+				};
+				ProjectSettings::debugOutput = indexToSeverity[level];
+#ifdef _DEBUG
+
+				if (ImGui::Checkbox("Debug SDL Events", &debugEvents))
+				{
+					for (auto& win : allWindows)
+					{
+						win->debugEvents = debugEvents;
+					}
+				}
+#endif
+				ImGui::TreePop();
 			}
-			ImGui::Combo("GL Debug Level", &level, severities, 5);
-			GLenum indexToSeverity[] = { GL_DEBUG_SEVERITY_NOTIFICATION,
-				GL_DEBUG_SEVERITY_LOW,
-				GL_DEBUG_SEVERITY_MEDIUM,
-				GL_DEBUG_SEVERITY_HIGH,
-				DEBUG_SEVERITY_NOTHING
-			};
-			ProjectSettings::debugOutput = indexToSeverity[level];
 		}
 		int step = 1;
 		int bigStep = 10; // No step on snek
@@ -137,7 +152,7 @@ public:
 				extractCalibration();
 				ProjectSettings::recompileFShaders = true;
 			}
-			if(ImGui::Checkbox("All subpixels in one pass", &ProjectSettings::subpixelOnePass))
+			if (ImGui::Checkbox("All subpixels in one pass", &ProjectSettings::subpixelOnePass))
 			{
 				ProjectSettings::recompileFShaders = true;
 			}

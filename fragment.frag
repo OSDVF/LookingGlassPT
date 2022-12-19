@@ -822,7 +822,11 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
 		    }
         }
         imageStore(uScreenColorDepth, coord, vec4(contrib, prevColorDepth.a));
-        return contrib * uInvRayCount * PI;
+        return contrib
+        #if !defined(SUBPIXEL_ONE_PASS) || defined(FLAT_SCREEN)
+        * 3
+        #endif
+        * uInvRayCount;
     }
 }
 
