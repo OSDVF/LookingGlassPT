@@ -26,9 +26,9 @@ public:
 	ControlWindow(std::array<AppWindow*, count>& allWindows, const char* name, float x, float y, float w, float h, bool debug, bool forceFlat = false) :
 		AppWindow(name, x, y, w, h), allWindows(allWindows), debug(debug)
 	{
+		ProjectSettings::fpsWindow = debug;
 		if (!debug)
 		{
-			ProjectSettings::fpsWindow = true;
 			ProjectSettings::debugOutput = DEBUG_SEVERITY_NOTHING;
 		}
 		std::cout << "Pixel scale: " << this->pixelScale << std::endl;
@@ -52,11 +52,12 @@ public:
 		AppWindow::renderOnEvent(events);
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
 		ImGui::SetNextWindowSize(ImVec2(windowWidth, windowHeight));
-		ImGui::Begin("Settings", 0, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);                          // Create a window called "Hello, world!" and append into it.
+		ImGui::Begin("Settings", 0, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize);
 		if (debug)
 		{
 			if (ImGui::TreeNode("Debug"))
 			{
+				ImGui::Checkbox("Statistics window", &ProjectSettings::fpsWindow);
 				const char* const severities[] = {
 					"Everything",
 					"Low or higher",
@@ -282,12 +283,12 @@ public:
 				ProjectSettings::recompileFShaders = true;
 			}
 
+			ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &ProjectSettings::objectCountLimit, &step);
 			if (ImGui::Button("(Re)load"))
 			{
 				ProjectSettings::reloadScene = true;
 			}
 			ImGui::TreePop();
-			ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &ProjectSettings::objectCountLimit, &step);
 		}
 
 

@@ -1,6 +1,5 @@
 //!#version 430
 #extension GL_ARB_bindless_texture: enable
-//#extension GL_ARB_gpu_shader_int64 : enable
 
 #define PI 3.141592653589
 #ifndef MAX_BOUNCES
@@ -28,15 +27,6 @@ uniform CalibrationBuffer {
     float subp;
     vec2 resolution;
 } uCalibration;
-
-// Layout is like this:
-// uint material number (if higher than 2 147 483 648, the material is treated as color-only)
-// uint index of first index in index buffer
-// uint number of indices
-// uint num of vertex attrs
-// uint total attrs size
-// uint 1st attr width
-// uint 2nd attr width...
 
 struct ObjectDefinition {
     uint material;
@@ -132,7 +122,6 @@ layout(std430, binding = 8) readonly buffer LightBuffer {
     Light[] lights;
 };
 
-//TODO vyzkoušet jiné typy projekce, které budou generovat ménì artefaktù
 
 uniform mat4 uView;
 uniform mat4 uProj;
@@ -274,7 +263,6 @@ void getFlatScreenRay(vec2 pix, out Ray ray){
 
 bool rayBoxIntersection(vec3 minPos, vec3 maxPos, Ray ray)
 {
-    // https://tavianator.com/2011/ray_box.html
     vec3 invDir = 1.0/ray.direction;
     vec3 t1 = (minPos - ray.origin)*invDir;
     vec3 t2 = (maxPos - ray.origin)*invDir;
@@ -312,6 +300,7 @@ float xorf(float x, float y)
 
 const float tNear = 0.01;
 const float tFar = 1000;
+//https://github.com/embree/embree/blob/master/kernels/geometry/triangle_intersector_moeller.h
 bool embreeIntersect(const Triangle tri, const Ray ray,
     inout float T, out float U, out float V){
     vec3 edgeA = vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz);
@@ -445,6 +434,7 @@ vec3 getMaterialColor(uint materialIndex, out vec3 emission, vec2 uv)
     return albedo;
 }
 
+//https://www.shadertoy.com/view/tdBXRW
 float xorTextureGradBox( in vec2 pos, in vec2 ddx, in vec2 ddy )
 {
     float xor = 0.0;
@@ -644,7 +634,7 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
                         Ray shadowRay = Ray(position, dirToLight / far);
                         Hit closestHit;
                         closestHit.rayT = far;//constant far plane for 
-                        for(uint o = 0; o < uObjectCount; o++)
+                        for(uint o = 0; o < uObjectCount && closestHit.rayT == far; o++)
 				        {
                             if(o == lights[0].object)
                             {
