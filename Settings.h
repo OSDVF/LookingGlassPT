@@ -37,4 +37,5 @@ namespace ProjectSettings {
 	inline float rayOffset = 1e-5f;
 	inline bool subpixelOnePass = false;
 	inline bool fpsWindow = false;
+	inline bool backfaceCulling = true;
 };

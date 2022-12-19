@@ -289,8 +289,9 @@ public:
 		std::string fragSource = Helpers::relativeToExecutable("fragment.frag").string();
 		auto bouncesDefine = std::format("MAX_BOUNCES {}", maxBounces);
 		auto subpixelOnePassDefine = std::string(subpixelOnePass ? "SUBPIXEL_ONE_PASS" : "SUBPIXEL_MULTI_PASS");
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine });
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine });
+		auto cullingDefine = std::string(backfaceCulling ? "CULLING" : "NO_CULLING");
+		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine, cullingDefine });
+		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine, cullingDefine });
 		glAttachShader(program, GlobalScreenType == ScreenType::Flat ? fFlatShader : fShader);
 	}
 
@@ -370,6 +371,7 @@ public:
 	bool focal = false;
 	bool fullscreen = false;
 	std::string textureErrors;
+	std::string sceneError;
 	const char* textureLoadingFailed = "Failed to load a texture";
 	const char* sceneLoadingFailed = "Failed to load scene";
 	std::size_t currentSubpixel = 2;
@@ -429,21 +431,31 @@ public:
 			ProjectSettings::reloadScene = false;
 			clearBuffers();
 
-			if (Import3DFromFile(ProjectSettings::scene.path))
+
+			try
 			{
+				Import3DFromFile(ProjectSettings::scene.path);
+
 				textureErrors = LoadGLTextures(gScene);
-				SubmitScene(gScene, nullptr, aiMatrix4x4(scene.scale, aiQuaternion(scene.rotationDeg.x, scene.rotationDeg.y, scene.rotationDeg.z), scene.position));
+				SubmitScene(gScene, nullptr, aiMatrix4x4(scene.scale, aiQuaternion(
+					glm::radians(scene.rotationDeg.x), glm::radians(scene.rotationDeg.y), glm::radians(scene.rotationDeg.z)
+				), scene.position));
 
 				if (!textureErrors.empty())
 				{
 					ImGui::OpenPopup(textureLoadingFailed);
 					std::cerr << "Texture loading failed \n";
 				}
+				if (!sceneError.empty())
+				{
+					ImGui::OpenPopup(sceneLoadingFailed);
+				}
 			}
-			else
+			catch (const std::runtime_error& e)
 			{
+				sceneError = e.what();
 				ImGui::OpenPopup(sceneLoadingFailed);
-				std::cerr << "Scene loading failed \n";
+				std::cerr << "Scene loading failed:\n" << sceneError << std::endl;
 			}
 
 			updateBuffers();
@@ -463,6 +475,7 @@ public:
 			ImGui::TextWrapped(textureErrors.c_str());
 			if (ImGui::Button("Close"))
 			{
+				textureErrors.clear();
 				ImGui::CloseCurrentPopup();
 			}
 			ImGui::EndPopup();
@@ -472,9 +485,10 @@ public:
 			// Enforce minimum automatic window width
 			ImGui::SetCursorPosX(windowWidth / 2);
 			ImGui::SetCursorPosX(0.0f);
-			ImGui::TextWrapped("Encountered error when loading scene");
+			ImGui::TextWrapped(sceneError.c_str());
 			if (ImGui::Button("Close"))
 			{
+				sceneError.clear();
 				ImGui::CloseCurrentPopup();
 			}
 			ImGui::EndPopup();
@@ -663,7 +677,7 @@ public:
 	}
 
 
-	bool Import3DFromFile(const std::filesystem::path& pFile)
+	void Import3DFromFile(const std::filesystem::path& pFile)
 	{
 		// Check if file exists
 		std::ifstream fin(pFile);
@@ -673,9 +687,8 @@ public:
 		}
 		else
 		{
-			std::cerr << "Could not open scene file " << pFile << std::endl;
 			logInfo(importer.GetErrorString());
-			return false;
+			throw std::runtime_error(std::format("Could not open scene file {}: \n{}", pFile.string(), importer.GetErrorString()));
 		}
 
 		gScene = importer.ReadFile(pFile.string(), aiProcessPreset_TargetRealtime_Quality | aiPostProcessSteps::aiProcess_FlipUVs | aiPostProcessSteps::aiProcess_FixInfacingNormals);
@@ -684,14 +697,13 @@ public:
 		if (!gScene)
 		{
 			logInfo(importer.GetErrorString());
-			return false;
+			throw std::runtime_error(std::format("Import failed:\n{}", importer.GetErrorString()));
 		}
 
 		// Now we can access the file's contents.
 		logInfo("Import of scene ", pFile, " succeeded.");
 
 		// We're done. Everything will be cleaned up by the importer destructor
-		return true;
 	}
 
 	// Returns errors list
@@ -923,7 +935,6 @@ public:
 		}
 		for (unsigned int t = 0; t < uvNum; t++)
 		{
-			assert(mesh->mNumUVComponents[t] == 2);
 			//for (auto t = (decltype(mesh->mNumUVComponents[0]))0;
 			//	t < mesh->mNumUVComponents[0]; t++)
 			{
@@ -956,6 +967,14 @@ public:
 			}
 			const struct aiMesh* mesh = sc->mMeshes[nd->mMeshes[n]];
 
+			for (unsigned int t = 0; t < getUvNum(mesh); t++)
+			{
+				if (mesh->mNumUVComponents[t] != 2)
+				{
+					sceneError += "Only meshes with two-dimensional UVs are supported yet.";
+				}
+			}
+
 			auto vboCursorPos = vertexAttrs.totalSize / sizeof(float);
 			auto triCursorPos = triangles.size();
 			auto materialCursorPos = materials.size();
@@ -978,7 +997,11 @@ public:
 			for (std::size_t f = 0; f < mesh->mNumFaces; f++)
 			{
 				const struct aiFace* face = &mesh->mFaces[f];
-				assert(face->mNumIndices == 3);// Support triangles only
+				if (face->mNumIndices != 3)// Support triangles only
+				{
+					sceneError += "Only triangle meshes are supported yet.";
+					return;
+				}
 
 				// Apply transformation matrix and construct a trinagle
 				glm::uvec3 indices = { face->mIndices[0], face->mIndices[1], face->mIndices[2] };

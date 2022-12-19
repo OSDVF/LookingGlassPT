@@ -8,8 +8,9 @@ Yet another quick school project.
 - Automatic Looking Glass calibration
 	- through Holoplay.js if you have Looking Glass Bridge application running
 	- through good old USB interface as a fallback
-- Loading scenes (many supported formats through [assimp](https://github.com/assimp/assimp))
-- Realtime path tracing
+- Loading scenes (many supported formats through [assimp](https://github.com/assimp/assimp) but optimized for glTF with no embedded textures)
+- Non-realtime path tracing
+- Realtime ray tracing
 - Input processing on one thread and rendering on another thread (event queue synchronization may be slow, but VS profiler shows 'not that much'🙃)
 - Works even if you set display scaling different than 100% (like me)
 

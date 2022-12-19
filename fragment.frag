@@ -312,14 +312,11 @@ float xorf(float x, float y)
 
 const float tNear = 0.01;
 const float tFar = 1000;
-#define MAGIC
-//#define CULLING
 bool embreeIntersect(const Triangle tri, const Ray ray,
     inout float T, out float U, out float V){
     vec3 edgeA = vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz);
     vec3 edgeB = vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz);
     vec3 normal = vec3(tri.normalX,tri.normalY,tri.normalZ);
-    #ifdef MAGIC
     const float den = dot( normal, ray.direction );
     #ifdef CULLING
     if(den < 0.001)
@@ -366,135 +363,7 @@ bool embreeIntersect(const Triangle tri, const Ray ray,
         return true;
     }
     return false;
-    #else
-    vec3 pvec = cross(ray.direction, edgeB);
-    float det = dot(edgeA, pvec);
-    if (abs(det) < 0.001) return false;
-    
-    float iDet = 1./det;
-    
-    vec3 tvec = ray.origin - tri.v0;
-    U = dot(tvec, pvec) * iDet;
-    float inside = step(0.0, U) * (1.-step(1.0, U));
-    
-    vec3 qvec = cross(tvec, edgeA);
-    V = dot(ray.direction, qvec) * iDet;
-    inside *= step(0.0, V) * (1. - step(1., U+V));
-    if (inside == 0.0) return false;
-    
-    float d = dot(edgeB, qvec) * iDet;
-    
-    float f = step(0.0, -d);
-    d = d * (1.-f) + (f * pos_infinity);    
-    if (d > T) { return false; }
-    
-    T = d;
-    return true;
-    #endif
 }
-
-
-//#define MOLLER_TRUMBORE
-const float kEpsilon = 1e-8; 
-bool rayTriangleIntersect( 
-    const vec3 orig, const vec3 dir, 
-    const vec3 v0, const vec3 v1, const vec3 v2, 
-    out float t, out float u, out float v) 
-{ 
-#ifdef MOLLER_TRUMBORE 
-    vec3 v0v1 = v1 - v0; 
-    vec3 v0v2 = v2 - v0; 
-    vec3 pvec = cross(dir, v0v2); 
-    float det = dot(v0v1, pvec); 
-#ifdef CULLING 
-    // if the determinant is negative the triangle is backfacing
-    // if the determinant is close to 0, the ray misses the triangle
-    if (det < kEpsilon) 
-    {
-        return false; 
-    }
-#else 
-    // ray and triangle are parallel if det is close to 0
-    if (abs(det) < kEpsilon)
-    {
-        return false; 
-    }
-#endif 
-    float invDet = 1 / det; 
- 
-    vec3 tvec = orig - v0; 
-    u = dot(tvec, pvec) * invDet; 
-    if (u < 0 || u > 1)
-    {
-        return false;
-    }
- 
-    vec3 qvec = cross(tvec, v0v1); 
-    v = dot(dir, qvec) * invDet; 
-    if (v < 0 || u + v > 1)
-    {
-        return false;
-    }
- 
-    t = dot(v0v2, qvec) * invDet; 
- 
-    return true; 
-#else 
-    // compute plane's normal
-    vec3 v0v1 = v1 - v0; 
-    vec3 v0v2 = v2 - v0; 
-    // no need to normalize
-    vec3 N = cross(v0v1, v0v2);  //N 
-    float denom = dot(N, N); 
- 
-    // Step 1: finding P
- 
-    // check if ray and plane are parallel ?
-    float NdotRayDirection = dot(N, dir); 
- 
-    if (abs(NdotRayDirection) < kEpsilon)  //almost 0 
-        return false;  //they are parallel so they don't intersect ! 
- 
-    // compute d parameter using equation 2
-    float d = -dot(N,v0); 
- 
-    // compute t (equation 3)
-    float newT = -(dot(N, orig) + d) / NdotRayDirection; 
- 
-    // check if the triangle is in behind the ray
-    if (newT < 0 || newT > t) return false;  //the triangle is behind 
-    t = newT;
- 
-    // compute the intersection point using equation 1
-    vec3 P = orig + t * dir; 
- 
-    // Step 2: inside-outside test
-    vec3 C;  //vector perpendicular to triangle's plane 
- 
-    // edge 0
-    vec3 edge0 = v1 - v0; 
-    vec3 vp0 = P - v0; 
-    C = cross(edge0, vp0); 
-    if (dot(N, C) < 0) return false;  //P is on the right side 
- 
-    // edge 1
-    vec3 edge1 = v2 - v1; 
-    vec3 vp1 = P - v1; 
-    C = cross(edge1, vp1); 
-    if ((u = dot(N, C)) < 0)  return false;  //P is on the right side 
- 
-    // edge 2
-    vec3 edge2 = v0 - v2; 
-    vec3 vp2 = P - v2; 
-    C = cross(edge2, vp2); 
-    if ((v = dot(N, C)) < 0) return false;  //P is on the right side; 
- 
-    u /= denom; 
-    v /= denom; 
- 
-    return true;  //this ray hits the triangle 
-#endif 
-} 
  
  float interpolateAttribute(in uint vboStartIndex, in vec2 barycentric, in uint totalAttrSize, in uint currentAttrOffset, in uvec3 indices)
  {
@@ -676,7 +545,7 @@ bool resolveRay(Ray ray, out vec3 albedo, out vec3 normal, out vec3 emission, ou
 
 void updateGBuffer(vec3 albedo, vec3 emission, vec3 normal, float depth, ivec2 coord)
 {
-    imageStore(uScreenAlbedo, coord, vec4(albedo, uintBitsToFloat(packHalf2x16(emission.xy))));//Albedo and emission factor
+    imageStore(uScreenAlbedo, coord, vec4(albedo + emission, (emission.x + emission.y)*0.55));//Albedo and emission factor
     imageStore(uScreenNormal, coord, vec4(normal * 0.5 + 0.5, emission.z));
     imageStore(uScreenColorDepth, coord, vec4(vec3(0.), depth));
 }
@@ -733,93 +602,98 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
         vec3 albedo = prevAlbedo;
         vec4 previousNormalEmission = imageLoad(uScreenNormal, coord);
         vec3 previousNormal = previousNormalEmission.rgb * 2. - 1;
-        vec3 emission = vec3(unpackHalf2x16(floatBitsToUint(prevAlbedoEmission.a)), previousNormalEmission.a);
-        // Return only light color for emissive materials
-        if(emission.r > 0 || emission.g > 0 || emission.b > 0)
-        {
-            return max(emission,1.0);
-        }
+        vec3 emission;
 
         vec4 prevColorDepth = imageLoad(uScreenColorDepth, coord);
         float depth = prevColorDepth.a;
-        vec3 throughput = albedo;
-
-        vec3 secondaryColor;
         vec3 contrib = prevColorDepth.rgb;
-        // Basically the alrogithm from https://www.shadertoy.com/view/4lfcDr
-        for(int i = 0; i < MAX_BOUNCES; i++)
+        // Return only light color for emissive materials
+        if(previousNormalEmission.a > 0)
         {
-            Light light = lights[0];
-            vec3 position = primaryRay.origin + primaryRay.direction * depth;
-            { // Next event estimation (sample light)
-			    vec3 pos_ls = sample_light(get_random(), light);
-                vec3 dirToLight = pos_ls - position;
-			    vec3 l_nee = dirToLight;
-			    float rr_nee = dot(l_nee, l_nee);
-			    l_nee /= sqrt(rr_nee);
-			    float G = max(0.0, dot(previousNormal, l_nee)) * max(0.0, -dot(l_nee, light.normal)) / rr_nee;
+            // The primary ray hit a light source here
+            contrib += albedo;
+        }
+        else
+        {
+            vec3 throughput = albedo;
 
-			    if(G > 0.0) {
-				    float light_pdf = 1.0 / (light.area * G);
-				    float brdf_pdf = 1.0 / PI;
+            vec3 secondaryColor;
+            // Basically the alrogithm from https://www.shadertoy.com/view/4lfcDr
+            for(int i = 0; i < MAX_BOUNCES; i++)
+            {
+                Light light = lights[0];
+                vec3 position = primaryRay.origin + primaryRay.direction * depth;
+                { // Next event estimation (sample light)
+			        vec3 pos_ls = sample_light(get_random(), light);
+                    vec3 dirToLight = pos_ls - position;
+			        vec3 l_nee = dirToLight;
+			        float rr_nee = dot(l_nee, l_nee);
+			        l_nee /= sqrt(rr_nee);
+			        float G = max(0.0, dot(previousNormal, l_nee)) * max(0.0, -dot(l_nee, light.normal)) / rr_nee;
 
-				    float w = light_pdf / (light_pdf + brdf_pdf);
-
-				    vec3 brdf = albedo.rgb / PI;
-
-                    // Test light visibility
-                    float far = length(dirToLight);
-                    Ray shadowRay = Ray(position, dirToLight / far);
-                    Hit closestHit;
-                    closestHit.rayT = far;//constant far plane for 
-                    for(uint o = 0; o < uObjectCount; o++)
-				    {
-                        if(o == lights[0].object)
-                        {
-                            continue;
-                        }
-                        ObjectDefinition obj = objectDefinitions[o];
-                        testVisibility(obj, shadowRay, closestHit);
-                    }
-                    if(closestHit.rayT == far) {
-					    vec3 Le = light.color.xyz;
-					    contrib += throughput * (Le * w * brdf) / light_pdf;
-				    }
-			    }
-		    }
-            { // Sample surface using BRDF
-                Ray secondary = createSecondaryRay(ndcCoord, position, previousNormal);
-                if(resolveRay(secondary, secondaryColor, normal, emission, depth))
-                {
-			        vec3 brdf = secondaryColor.rgb / PI;
-
-			        float brdf_pdf = 1.0 / PI;
-
-			        if(emission.x > 0. || emission.y > 0. || emission.z > 0.) { // hit light source
-				        float G = max(0.0, dot(secondary.direction, previousNormal)) * max(0.0, -dot(secondary.direction, normal)) / (depth * depth);
-				        if(G <= 0.0) // hit back side of light source
-					        break;
-
+			        if(G > 0.0) {
 				        float light_pdf = 1.0 / (light.area * G);
+				        float brdf_pdf = 1.0 / PI;
 
-				        float w = brdf_pdf / (light_pdf + brdf_pdf);
+				        float w = light_pdf / (light_pdf + brdf_pdf);
 
-				        vec3 Le = light.color.rgb;
-				        contrib += throughput * (Le * w * brdf) / brdf_pdf;
-				        break;
+				        vec3 brdf = albedo.rgb / PI;
+
+                        // Test light visibility
+                        float far = length(dirToLight);
+                        Ray shadowRay = Ray(position, dirToLight / far);
+                        Hit closestHit;
+                        closestHit.rayT = far;//constant far plane for 
+                        for(uint o = 0; o < uObjectCount; o++)
+				        {
+                            if(o == lights[0].object)
+                            {
+                                continue;
+                            }
+                            ObjectDefinition obj = objectDefinitions[o];
+                            testVisibility(obj, shadowRay, closestHit);
+                        }
+                        if(closestHit.rayT == far) {
+					        vec3 Le = light.color.xyz;
+					        contrib += throughput * (Le * w * brdf) / light_pdf;
+				        }
 			        }
+		        }
+                { // Sample surface using BRDF
+                    Ray secondary = createSecondaryRay(ndcCoord, position, previousNormal);
+                    if(resolveRay(secondary, secondaryColor, normal, emission, depth))
+                    {
+			            vec3 brdf = secondaryColor.rgb / PI;
 
-			        throughput *= brdf / brdf_pdf;
+			            float brdf_pdf = 1.0 / PI;
 
-			        primaryRay = secondary;
-			        previousNormal = normal;
-			        albedo = secondaryColor;
-                }
-                else
-                {
-                    break;
-                }
-		    }
+			            if(emission.x > 0. || emission.y > 0. || emission.z > 0.) {
+                            // Hit a light source
+				            float G = max(0.0, dot(secondary.direction, previousNormal)) * max(0.0, -dot(secondary.direction, normal)) / (depth * depth);
+				            if(G <= 0.0) // hit back side of light source
+					            break;
+
+				            float light_pdf = 1.0 / (light.area * G);
+
+				            float w = brdf_pdf / (light_pdf + brdf_pdf);
+
+				            vec3 Le = light.color.rgb;
+				            contrib += throughput * (Le * w * brdf) / brdf_pdf;
+				            break;
+			            }
+
+			            throughput *= brdf / brdf_pdf;
+
+			            primaryRay = secondary;
+			            previousNormal = normal;
+			            albedo = secondaryColor;
+                    }
+                    else
+                    {
+                        break;
+                    }
+		        }
+            }
         }
         imageStore(uScreenColorDepth, coord, vec4(contrib, prevColorDepth.a));
         return contrib

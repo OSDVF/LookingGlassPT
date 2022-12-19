@@ -21,7 +21,7 @@ class ControlWindow : public AppWindow {
 public:
 	std::array<AppWindow*, count>& allWindows;
 	std::string calibrationAlert;
-	std::string calibratedBy = "";
+	std::string calibratedBy = "Never Calibrated";
 	bool debug;
 	ControlWindow(std::array<AppWindow*, count>& allWindows, const char* name, float x, float y, float w, float h, bool debug, bool forceFlat = false) :
 		AppWindow(name, x, y, w, h), allWindows(allWindows), debug(debug)
@@ -277,6 +277,10 @@ public:
 			ImGui::DragFloat3("Position##Scene", &ProjectSettings::scene.position.x, .1f, -10000, 10000);
 			ImGui::DragFloat3("Rotation (deg)", &ProjectSettings::scene.rotationDeg.x, .1f, 0.f, 360.f - FLT_EPSILON);
 			ImGui::SliderFloat("Light Multiplier", &ProjectSettings::lightMultiplier, 0.1, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic);
+			if (ImGui::Checkbox("Backface Culling", &ProjectSettings::backfaceCulling))
+			{
+				ProjectSettings::recompileFShaders = true;
+			}
 
 			if (ImGui::Button("(Re)load"))
 			{
