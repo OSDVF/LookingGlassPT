@@ -6,16 +6,18 @@ Yet another quick school project.
 
 ## Features
 - Automatic Looking Glass calibration
-	- through Holoplay.js if you have Looking Glass Bridge application running
+	- through Holoplay.js if you have Looking Glass Bridge application running and Node.js installed
 	- through good old USB interface as a fallback
-- Loading scenes (many supported formats through [assimp](https://github.com/assimp/assimp) but optimized for glTF with no embedded textures)
+	- Looking Glass rendering works correctly only in full screen mode (press `f`)
+- Loading scenes (many supported formats through [assimp](https://github.com/assimp/assimp) but optimized for glTF format with no embedded textures)
 - Non-realtime path tracing
 - Realtime ray tracing
 - Input processing on one thread and rendering on another thread (event queue synchronization may be slow, but VS profiler shows 'not that much'🙃)
 - Works even if you set display scaling different than 100% (like me)
+- Example Cornell Box scene (cornellBox.glb)
 
 ## Build
-- There was the aim to make this project portable, but it was tested only on Windows 10 x64 with GTX 1050 Mobile
+- There aim was to make this project portable, but it was tested only on Windows 10 x64 with GTX 1050 Mobile
 - Install [CMake](https://cmake.org/), [vcpkg](https://vcpkg.io/) and [node](https://nodejs.org/en/).
 - Setup `vcpkg` by running
 	- `.\vcpkg\bootstrap-vcpkg.bat` or `.\vcpkg\bootstrap-vcpkg.sh` in the directory where you cloned `vcpkg`
@@ -26,13 +28,57 @@ Yet another quick school project.
 - `mkdir build && cmake -B./build -S. -DCMAKE_TOOLCHAIN_FILE=[path to vcpkg]/scripts/buildsystems/vcpkg.cmake`
 - or for the Visual Studio: edit `CMakePresets.json` and change `C:/vcpkg/scripts/buildsystems/vcpkg.cmake` to your path
 
+### Note
+The executable directory (conatining LookingGlassPT.exe) will be different than the build directory (containing CMakeCache.txt, node_modules...)
+**when building under MSBuild**. It is the required to run the application with the **build directory** as the working directory or it will crash because
+of not finding required shaders (vertex.vert & fragment.frag) and calibration script (index.js).
+
 ## Run
 There are two windows
 - Control window for changing program settings variables (e.g. switching between flat screen and looking glass)
-- Output window
+- Rendering window
 Optional program arguments
 - `d` display debug console
 - `flat` skip initial the searching for a connected looking glass and use flat screen directly
+
+## Controls
+The left window is a "control window". You can set scene parameters there.
+### Noteworthy scene settings
+- Scale - the program does not check the scene for correct scaling. You must set correct scaling here. For the cornellBox.glb scene the correct scaling is 10x (1 when using logarithmic scale)
+- When using Logarithmic Scale: 0 -> 1x, 1 -> 10x, 2 -> 100x, -1 -> 0.1x
+- Maximum Object Count: this project does not use any acceleration structures for the triangle rendering. The complexity scales very badly with large number of triangles, so try to reduce the object count if you have problems.  
+The count of triangles can't be set unfortunately.
+### Keyboard
+The program has several interactive features which can be turned on by pressing keys when the right "rendering window" is focused.
+- `i` - Toggles interactive mode: W, A, S, D, Space for move, Shift for higher speed, Mouse for look around
+- `l` - Toggles between Looking Glass and Flat Screen mode
+- `Escape` - Hides the rendering window
+- `p` - Toggles power save mode - renders frames only when moving mouse or touching keyboard
+- `f` - Full screen - required when using Looking Glass as the output format
+- `r` - Recompile shaders - the shaders (vertex.vert, fragment.frag) are loaded from the working directory. You can edit them in the runtime and apply your changes instantly using this.  
+As a fallback, shaders from the executable directory are used (if it is different than the working directory).
+
+## Screenshots
+![Sponza](sponza.png)  
+[Sponza scene](https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/Sponza/glTF)(only 80 objects) running on RTX 4090  
+![Lantern](lantern.png)  
+[Lantern scene](https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/Lantern) running at GTX 1050 Mobile  
+![Lantern Path Tracing](lantern-pt.png)  
+Lantern scene in path tracing mode  
+
+### Cornell Box
+![Cornell box](cb.png)  
+Cornell box scene in path tracing mode  
+![Cornell box on looking glass](cb-lg1.jpg)  
+Cornell box scene ray traced on looking glass  
+![Cornell box on looking glass different view](cb-lg2.jpg)  
+Different view  
+
+### Path tracing
+![Cornell box path tracing on looking glass](cb-lgpt1.jpg)  
+Cornell box scene path traced on looking glass (different subpixel handling not functional yet)  
+![Cornell box path tracing on looking glass different view](cb-lgpt2.jpg)  
+Different view
 
 ## Dependencies
 - C++ 20
