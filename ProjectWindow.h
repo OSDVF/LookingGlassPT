@@ -113,7 +113,13 @@ public:
 		}
 
 		program = glCreateProgram();
-		GlHelpers::compileShader<GL_VERTEX_SHADER>(Helpers::relativeToExecutable("vertex.vert").string(), vShader, {});
+		try {
+			GlHelpers::compileShader<GL_VERTEX_SHADER>(Helpers::relativeToExecutable("vertex.vert").string(), vShader, {});
+		}
+		catch (const std::runtime_error& e)
+		{
+			resourceError += e.what();
+		}
 		glAttachShader(program, vShader);
 		recompileFragmentSh();
 		GlHelpers::linkProgram(program);
@@ -173,7 +179,6 @@ public:
 		person.Camera.SetProjectionMatrixPerspective(fov, windowWidth / windowHeight, nearPlane, farPlane);
 		person.Camera.SetCenter(glm::vec2(windowWidth / 2, windowHeight / 2));
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-		//loadTestScene();
 		updateBuffers();
 	}
 
@@ -285,14 +290,20 @@ public:
 				glDetachShader(program, shaders[i]);
 			}
 		}
-
-		std::string fragSource = Helpers::relativeToExecutable("fragment.frag").string();
-		auto bouncesDefine = std::format("MAX_BOUNCES {}", maxBounces);
-		auto subpixelOnePassDefine = std::string(subpixelOnePass ? "SUBPIXEL_ONE_PASS" : "SUBPIXEL_MULTI_PASS");
-		auto cullingDefine = std::string(backfaceCulling ? "CULLING" : "NO_CULLING");
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine, cullingDefine });
-		GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine, cullingDefine });
-		glAttachShader(program, GlobalScreenType == ScreenType::Flat ? fFlatShader : fShader);
+		try {
+			std::string fragSource = Helpers::relativeToExecutable("fragment.frag").string();
+			auto bouncesDefine = std::format("MAX_BOUNCES {}", maxBounces);
+			auto subpixelOnePassDefine = std::string(subpixelOnePass ? "SUBPIXEL_ONE_PASS" : "SUBPIXEL_MULTI_PASS");
+			auto cullingDefine = std::string(backfaceCulling ? "CULLING" : "NO_CULLING");
+			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine, cullingDefine });
+			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine, cullingDefine });
+			glAttachShader(program, GlobalScreenType == ScreenType::Flat ? fFlatShader : fShader);
+		}
+		catch (const std::runtime_error& e)
+		{
+			resourceError += e.what();
+			ImGui::OpenPopup(resourceLoadingFailed);
+		}
 	}
 
 	void render() override
@@ -371,9 +382,9 @@ public:
 	bool focal = false;
 	bool fullscreen = false;
 	std::string textureErrors;
-	std::string sceneError;
+	std::string resourceError;
 	const char* textureLoadingFailed = "Failed to load a texture";
-	const char* sceneLoadingFailed = "Failed to load scene";
+	const char* resourceLoadingFailed = "Failed to load resource";
 	std::size_t currentSubpixel = 2;
 
 	void applyScreenType()
@@ -446,16 +457,12 @@ public:
 					ImGui::OpenPopup(textureLoadingFailed);
 					std::cerr << "Texture loading failed \n";
 				}
-				if (!sceneError.empty())
-				{
-					ImGui::OpenPopup(sceneLoadingFailed);
-				}
 			}
 			catch (const std::runtime_error& e)
 			{
-				sceneError = e.what();
-				ImGui::OpenPopup(sceneLoadingFailed);
-				std::cerr << "Scene loading failed:\n" << sceneError << std::endl;
+				resourceError = e.what();
+				ImGui::OpenPopup(resourceLoadingFailed);
+				std::cerr << "Resource loading failed:\n" << resourceError << std::endl;
 			}
 
 			updateBuffers();
@@ -471,7 +478,7 @@ public:
 		{
 			// Enforce minimum automatic window width
 			ImGui::SetCursorPosX(windowWidth / 2);
-			ImGui::SetCursorPosX(0.0f);
+			ImGui::SetCursorPosX(10.0f);
 			ImGui::TextWrapped(textureErrors.c_str());
 			if (ImGui::Button("Close"))
 			{
@@ -480,15 +487,19 @@ public:
 			}
 			ImGui::EndPopup();
 		}
-		if (ImGui::BeginPopup(sceneLoadingFailed))
+		if (!resourceError.empty())
+		{
+			ImGui::OpenPopup(resourceLoadingFailed);
+		}
+		if (ImGui::BeginPopup(resourceLoadingFailed))
 		{
 			// Enforce minimum automatic window width
 			ImGui::SetCursorPosX(windowWidth / 2);
-			ImGui::SetCursorPosX(0.0f);
-			ImGui::TextWrapped(sceneError.c_str());
+			ImGui::SetCursorPosX(10.0f);
+			ImGui::TextWrapped(resourceError.c_str());
 			if (ImGui::Button("Close"))
 			{
-				sceneError.clear();
+				resourceError.clear();
 				ImGui::CloseCurrentPopup();
 			}
 			ImGui::EndPopup();
@@ -748,7 +759,7 @@ public:
 					break;
 				}
 				std::cout << std::endl;
-			}
+		}
 #endif
 			auto texCount = material->GetTextureCount(aiTextureType_DIFFUSE);
 			std::cout << "has " << texCount << " diff textures." << std::endl;
@@ -777,7 +788,7 @@ public:
 					std::reference_wrapper(invalidHandle), GLuint64(-1)
 				)); //fill map with texture paths, handles are still pseudo-NULL yet
 			}
-		}
+	}
 
 		const size_t numTextures = textureHandleMap.size();
 
@@ -860,7 +871,7 @@ public:
 		}
 		std::cerr << ss.rdbuf();
 		return ss.str();
-	}
+}
 
 	void SubmitMaterial(const aiMaterial* mtl)
 	{
@@ -974,7 +985,7 @@ public:
 			{
 				if (mesh->mNumUVComponents[t] != 2)
 				{
-					sceneError += "Only meshes with two-dimensional UVs are supported yet.";
+					resourceError += "Only meshes with two-dimensional UVs are supported yet.";
 				}
 			}
 
@@ -1002,7 +1013,7 @@ public:
 				const struct aiFace* face = &mesh->mFaces[f];
 				if (face->mNumIndices != 3)// Support triangles only
 				{
-					sceneError += "Only triangle meshes are supported yet.";
+					resourceError += "Only triangle meshes are supported yet.";
 					return;
 				}
 

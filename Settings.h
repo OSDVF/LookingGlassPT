@@ -19,9 +19,9 @@ namespace ProjectSettings {
 	} GlobalScreenType;
 	inline bool applyScreenType = false;
 	inline bool recompileFShaders = false;
-	inline bool reloadScene = true;
+	inline bool reloadScene = false;
 	inline struct {
-		std::filesystem::path path = "cornellBox.glb";
+		std::filesystem::path path = "";
 		aiVector3D scale = { 10,10,10 };
 		aiVector3D position;
 		aiVector3D rotationDeg;
