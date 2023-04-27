@@ -1,10 +1,10 @@
 #pragma once
 #include "AppWindow.h"
-#include "Settings.h"
+#include "../Structures/SceneAndViewSettings.h"
+#include "../Structures/AlertException.h"
 #include "UsbCalibration.h"
 #include "BridgeCalibration.h"
 #include "GlHelpers.h"
-#include "alert_exception.h"
 #include <imgui.h>
 #include <array>
 #include <nfd.h>
@@ -26,16 +26,16 @@ public:
 	ControlWindow(std::array<AppWindow*, count>& allWindows, const char* name, float x, float y, float w, float h, bool debug, bool forceFlat = false) :
 		AppWindow(name, x, y, w, h), allWindows(allWindows), debug(debug)
 	{
-		ProjectSettings::fpsWindow = debug;
+		SceneAndViewSettings::fpsWindow = debug;
 		if (!debug)
 		{
-			ProjectSettings::debugOutput = DEBUG_SEVERITY_NOTHING;
+			SceneAndViewSettings::debugOutput = DEBUG_SEVERITY_NOTHING;
 		}
 		std::cout << "Pixel scale: " << this->pixelScale << std::endl;
 		if (forceFlat)
 		{
 			std::cout << "Forced flat screen." << std::endl;
-			ProjectSettings::GlobalScreenType = ProjectSettings::ScreenType::Flat;
+			SceneAndViewSettings::GlobalScreenType = SceneAndViewSettings::ScreenType::Flat;
 		}
 		else
 		{
@@ -57,7 +57,7 @@ public:
 		{
 			if (ImGui::TreeNode("Debug"))
 			{
-				ImGui::Checkbox("Statistics window", &ProjectSettings::fpsWindow);
+				ImGui::Checkbox("Statistics window", &SceneAndViewSettings::fpsWindow);
 				const char* const severities[] = {
 					"Everything",
 					"Low or higher",
@@ -66,7 +66,7 @@ public:
 					"None"
 				};
 				int level;
-				switch (ProjectSettings::debugOutput)
+				switch (SceneAndViewSettings::debugOutput)
 				{
 				case GL_DEBUG_SEVERITY_NOTIFICATION:
 					level = 0;
@@ -90,7 +90,7 @@ public:
 					GL_DEBUG_SEVERITY_HIGH,
 					DEBUG_SEVERITY_NOTHING
 				};
-				ProjectSettings::debugOutput = indexToSeverity[level];
+				SceneAndViewSettings::debugOutput = indexToSeverity[level];
 #ifdef _DEBUG
 
 				if (ImGui::Checkbox("Debug SDL Events", &debugEvents))
@@ -108,78 +108,78 @@ public:
 		int bigStep = 10; // No step on snek
 		if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			if (ProjectSettings::pathTracing)
+			if (SceneAndViewSettings::pathTracing)
 			{
 				if (ImGui::Button("Pause Path Tracing"))
 				{
-					ProjectSettings::pathTracing = false;
+					SceneAndViewSettings::pathTracing = false;
 				}
 				ImGui::SameLine();
-				ImGui::Text("Iteration: %d", ProjectSettings::rayIteration);
+				ImGui::Text("Iteration: %d", SceneAndViewSettings::rayIteration);
 			}
 			else
 			{
-				ImGui::InputScalar("Max Iterations", ImGuiDataType_U64, &ProjectSettings::maxIterations, &step, &bigStep);
-				if (ImGui::InputScalar("Max Ray Bounces", ImGuiDataType_U64, &ProjectSettings::maxBounces, &step, &bigStep))
+				ImGui::InputScalar("Max Iterations", ImGuiDataType_U64, &SceneAndViewSettings::maxIterations, &step, &bigStep);
+				if (ImGui::InputScalar("Max Ray Bounces", ImGuiDataType_U64, &SceneAndViewSettings::maxBounces, &step, &bigStep))
 				{
-					ProjectSettings::recompileFShaders = true;
+					SceneAndViewSettings::recompileFShaders = true;
 				}
-				ImGui::InputFloat("Ray Offset", &ProjectSettings::rayOffset, 1e-5, 0, "%g");
+				ImGui::InputFloat("Ray Offset", &SceneAndViewSettings::rayOffset, 1e-5, 0, "%g");
 				if (ImGui::Button("Start/Resume Path Tracing"))
 				{
-					ProjectSettings::pathTracing = true;
-					ProjectSettings::interactive = false;
+					SceneAndViewSettings::pathTracing = true;
+					SceneAndViewSettings::interactive = false;
 				}
-				if (ProjectSettings::rayIteration > 0)
+				if (SceneAndViewSettings::rayIteration > 0)
 				{
 					if (ImGui::Button("Reset Result"))
 					{
-						ProjectSettings::rayIteration = 0;
+						SceneAndViewSettings::rayIteration = 0;
 					}
 				}
 			}
 			ImGui::TreePop();
 		}
-		if (ImGui::RadioButton("Looking Glass", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::LookingGlass))
+		if (ImGui::RadioButton("Looking Glass", (int*)&SceneAndViewSettings::GlobalScreenType, (int)SceneAndViewSettings::ScreenType::LookingGlass))
 		{
-			ProjectSettings::applyScreenType = true;
+			SceneAndViewSettings::applyScreenType = true;
 		}
-		if (ProjectSettings::GlobalScreenType == ProjectSettings::ScreenType::LookingGlass)
+		if (SceneAndViewSettings::GlobalScreenType == SceneAndViewSettings::ScreenType::LookingGlass)
 		{
-			ImGui::TreePush();
+			ImGui::TreePush("LG specific");
 			ImGui::Text("Calibrated by: %s", calibratedBy.c_str());
 			if (ImGui::Button("Retry Calibration"))
 			{
 				extractCalibration();
-				ProjectSettings::recompileFShaders = true;
+				SceneAndViewSettings::recompileFShaders = true;
 			}
-			if (ImGui::Checkbox("All subpixels in one pass", &ProjectSettings::subpixelOnePass))
+			if (ImGui::Checkbox("All subpixels in one pass", &SceneAndViewSettings::subpixelOnePass))
 			{
-				ProjectSettings::recompileFShaders = true;
+				SceneAndViewSettings::recompileFShaders = true;
 			}
 			ImGui::TreePop();
 		}
-		if (ImGui::RadioButton("Flat", (int*)&ProjectSettings::GlobalScreenType, (int)ProjectSettings::ScreenType::Flat))
+		if (ImGui::RadioButton("Flat", (int*)&SceneAndViewSettings::GlobalScreenType, (int)SceneAndViewSettings::ScreenType::Flat))
 		{
-			ProjectSettings::applyScreenType = true;
+			SceneAndViewSettings::applyScreenType = true;
 		}
 		if (ImGui::TreeNode("Camera"))
 		{
-			bool cameraEdited = ImGui::SliderFloat("FOV", &ProjectSettings::fov, 30.f, 100.f);
-			cameraEdited = ImGui::SliderFloat("Near Plane", &ProjectSettings::nearPlane, 0.01f, 1) || cameraEdited;
-			cameraEdited = ImGui::SliderFloat("Far Plane", &ProjectSettings::farPlane, ProjectSettings::nearPlane, 1000) || cameraEdited;
-			ImGui::SliderFloat("Sensitivity", &ProjectSettings::person.Camera.Sensitivity, 0.01, 1);
-			ImGui::InputFloat3("P", glm::value_ptr(ProjectSettings::person.Camera._position));
-			ImGui::InputFloat3("R", glm::value_ptr(ProjectSettings::person.Camera._rotation));
+			bool cameraEdited = ImGui::SliderFloat("FOV", &SceneAndViewSettings::fov, 30.f, 100.f);
+			cameraEdited = ImGui::SliderFloat("Near Plane", &SceneAndViewSettings::nearPlane, 0.01f, 1) || cameraEdited;
+			cameraEdited = ImGui::SliderFloat("Far Plane", &SceneAndViewSettings::farPlane, SceneAndViewSettings::nearPlane, 1000) || cameraEdited;
+			ImGui::SliderFloat("Sensitivity", &SceneAndViewSettings::person.Camera.Sensitivity, 0.01, 1);
+			ImGui::InputFloat3("P", glm::value_ptr(SceneAndViewSettings::person.Camera._position));
+			ImGui::InputFloat3("R", glm::value_ptr(SceneAndViewSettings::person.Camera._rotation));
 			ImGui::TreePop();
 
 			if (cameraEdited)
 			{
-				ProjectSettings::person.Camera.SetProjectionMatrixPerspective(
-					ProjectSettings::fov,
-					ProjectSettings::person.Camera.Aspect,
-					ProjectSettings::nearPlane,
-					ProjectSettings::farPlane
+				SceneAndViewSettings::person.Camera.SetProjectionMatrixPerspective(
+					SceneAndViewSettings::fov,
+					SceneAndViewSettings::person.Camera.Aspect,
+					SceneAndViewSettings::nearPlane,
+					SceneAndViewSettings::farPlane
 				);
 			}
 		}
@@ -204,17 +204,17 @@ public:
 				}
 			}
 		}
-		ImGui::SliderFloat("View Cone", &ProjectSettings::viewCone, 10.f, 80.f);
-		ImGui::SliderFloat("Focus Distance", &ProjectSettings::focusDistance, 0.f, 40.f);
+		ImGui::SliderFloat("View Cone", &SceneAndViewSettings::viewCone, 10.f, 80.f);
+		ImGui::SliderFloat("Focus Distance", &SceneAndViewSettings::focusDistance, 0.f, 40.f);
 		if (ImGui::TreeNodeEx("Scene", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			if (ProjectSettings::scene.path.empty())
+			if (SceneAndViewSettings::scene.path.empty())
 			{
 				ImGui::Text("No Scene Loaded");
 			}
 			else
 			{
-				ImGui::Text("%s", ProjectSettings::scene.path.filename().string().c_str());
+				ImGui::Text("%s", SceneAndViewSettings::scene.path.filename().string().c_str());
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Select"))
@@ -224,7 +224,7 @@ public:
 
 				if (result == NFD_OKAY) {
 					std::cout << "Selected " << outPath << std::endl;
-					ProjectSettings::scene.path = outPath;
+					SceneAndViewSettings::scene.path = outPath;
 					free(outPath);
 				}
 				else if (result == NFD_CANCEL) {
@@ -246,7 +246,7 @@ public:
 			if (logarithmicScale)
 			{
 				auto scPowerText = "Scale Power";
-				glm::vec3 scalePower = { log10(ProjectSettings::scene.scale.x), log10(ProjectSettings::scene.scale.y), log10(ProjectSettings::scene.scale.z) };
+				glm::vec3 scalePower = { log10(SceneAndViewSettings::scene.scale.x), log10(SceneAndViewSettings::scene.scale.y), log10(SceneAndViewSettings::scene.scale.z) };
 				if (uniformScale ? ImGui::DragFloat(scPowerText, glm::value_ptr(scalePower), .1f, -5, 5) :
 					ImGui::DragFloat3(scPowerText, glm::value_ptr(scalePower), .1f, -5, 5))
 				{
@@ -254,39 +254,39 @@ public:
 					{
 						scalePower.y = scalePower.z = scalePower.x;
 					}
-					ProjectSettings::scene.scale = GlHelpers::structConvert<aiVector3D, glm::vec3>(glm::pow(glm::vec3(10.f), scalePower));
-					//std::cout << GlHelpers::aiToGlm(ProjectSettings::scene.scale) << std::endl;
+					SceneAndViewSettings::scene.scale = GlHelpers::structConvert<aiVector3D, glm::vec3>(glm::pow(glm::vec3(10.f), scalePower));
+					//std::cout << GlHelpers::aiToGlm(SceneAndViewSettings::scene.scale) << std::endl;
 				}
 			}
 			else
 			{
 				if (uniformScale)
 				{
-					ImGui::DragFloat("Scale##Scene", &ProjectSettings::scene.scale.x, 100.f, 0.00001, 100000, "%f", ImGuiSliderFlags_Logarithmic);
-					ProjectSettings::scene.scale.y = ProjectSettings::scene.scale.z = ProjectSettings::scene.scale.x;
+					ImGui::DragFloat("Scale##Scene", &SceneAndViewSettings::scene.scale.x, 100.f, 0.00001, 100000, "%f", ImGuiSliderFlags_Logarithmic);
+					SceneAndViewSettings::scene.scale.y = SceneAndViewSettings::scene.scale.z = SceneAndViewSettings::scene.scale.x;
 				}
 				else
 				{
-					ImGui::DragFloat3("Scale##Scene", &ProjectSettings::scene.scale.x, 100.f, 0.00001, 100000, "%f", ImGuiSliderFlags_Logarithmic);
+					ImGui::DragFloat3("Scale##Scene", &SceneAndViewSettings::scene.scale.x, 100.f, 0.00001, 100000, "%f", ImGuiSliderFlags_Logarithmic);
 				}
 			}
-			ImGui::TreePush();
+			ImGui::TreePush("Details");
 			ImGui::Checkbox("Logarithmic Scale", &logarithmicScale);
 			ImGui::SameLine();
 			ImGui::Checkbox("Uniform", &uniformScale);
 			ImGui::TreePop();
-			ImGui::DragFloat3("Position##Scene", &ProjectSettings::scene.position.x, .1f, -10000, 10000);
-			ImGui::DragFloat3("Rotation (deg)", &ProjectSettings::scene.rotationDeg.x, .1f, 0.f, 360.f - FLT_EPSILON);
-			ImGui::SliderFloat("Light Multiplier", &ProjectSettings::lightMultiplier, 0.1, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic);
-			if (ImGui::Checkbox("Backface Culling", &ProjectSettings::backfaceCulling))
+			ImGui::DragFloat3("Position##Scene", &SceneAndViewSettings::scene.position.x, .1f, -10000, 10000);
+			ImGui::DragFloat3("Rotation (deg)", &SceneAndViewSettings::scene.rotationDeg.x, .1f, 0.f, 360.f - FLT_EPSILON);
+			ImGui::SliderFloat("Light Multiplier", &SceneAndViewSettings::lightMultiplier, 0.1, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic);
+			if (ImGui::Checkbox("Backface Culling", &SceneAndViewSettings::backfaceCulling))
 			{
-				ProjectSettings::recompileFShaders = true;
+				SceneAndViewSettings::recompileFShaders = true;
 			}
 
-			ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &ProjectSettings::objectCountLimit, &step);
+			ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &SceneAndViewSettings::objectCountLimit, &step);
 			if (ImGui::Button("(Re)load"))
 			{
-				ProjectSettings::reloadScene = true;
+				SceneAndViewSettings::reloadScene = true;
 			}
 			ImGui::TreePop();
 		}
@@ -330,24 +330,24 @@ public:
 	*/
 	void extractCalibration()
 	{
-		ProjectSettings::GlobalScreenType = ProjectSettings::ScreenType::Flat;
+		SceneAndViewSettings::GlobalScreenType = SceneAndViewSettings::ScreenType::Flat;
 		try {
 			try {
 				std::cout << "Trying Looking Glass Bridge calibration..." << std::endl;
-				ProjectSettings::calibration = BridgeCalibration().getCalibration();
+				SceneAndViewSettings::calibration = BridgeCalibration().getCalibration();
 				calibratedBy = "Looking Glass Bridge";
 			}
 			catch (const std::runtime_error& e)
 			{
 				std::cout << "Trying USB calibration..." << std::endl;
-				ProjectSettings::calibration = UsbCalibration().getCalibration();
+				SceneAndViewSettings::calibration = UsbCalibration().getCalibration();
 				calibratedBy = "USB Interface";
 				std::cerr << e.what() << std::endl;
 			}
-			ProjectSettings::GlobalScreenType = ProjectSettings::ScreenType::LookingGlass;
-			std::cout << "Calibration success: " << std::endl << ProjectSettings::calibration;
+			SceneAndViewSettings::GlobalScreenType = SceneAndViewSettings::ScreenType::LookingGlass;
+			std::cout << "Calibration success: " << std::endl << SceneAndViewSettings::calibration;
 		}
-		catch (const alert_exception& e)
+		catch (const AlertException& e)
 		{
 			calibrationAlert = e.what();
 		}

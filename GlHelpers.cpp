@@ -1,5 +1,5 @@
 #include "GlHelpers.h"
-#include "Settings.h"
+#include "Structures/SceneAndViewSettings.h"
 #include <boost/stacktrace.hpp>
 
 namespace GlHelpers {
@@ -12,7 +12,7 @@ namespace GlHelpers {
 			const GLchar* message,
 			const void* userParam)
 	{
-		if (severity >= ProjectSettings::debugOutput)
+		if (severity >= SceneAndViewSettings::debugOutput)
 		{
 			switch (type) {
 			case GL_DEBUG_TYPE_ERROR:

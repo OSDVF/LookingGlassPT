@@ -11,8 +11,12 @@ file(GLOB all_SRCS
         "${PROJECT_SOURCE_DIR}/impl/*.cpp"
         "${PROJECT_SOURCE_DIR}/impl/*.c"
         "${PROJECT_SOURCE_DIR}/*.c"
-        "${PROJECT_SOURCE_DIR}/*.cpp"
         "${PROJECT_SOURCE_DIR}/*.h"
+        "${PROJECT_SOURCE_DIR}/Window/*.h"
+        "${PROJECT_SOURCE_DIR}/Structures/*.h"
+        "${PROJECT_SOURCE_DIR}/*.cpp"
+        "${PROJECT_SOURCE_DIR}/Window/*.cpp"
+        "${PROJECT_SOURCE_DIR}/Structures/*.cpp"
         "${PROJECT_SOURCE_DIR}/*.hpp"
         )
 

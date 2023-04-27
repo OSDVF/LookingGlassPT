@@ -1,12 +1,12 @@
 #pragma once
-#include "PrecompiledHeaders.hpp"
+#include "../PrecompiledHeaders.hpp"
 #include <SDL.h>
 #include <imgui.h>
-#include "impl/imgui_impl_opengl3.h"
-#include "impl/imgui_impl_sdl.h"
+#include "../impl/imgui_impl_opengl3.h"
+#include "../impl/imgui_impl_sdl.h"
 #include "imgui_internal.h"
 #include <GL/glew.h>
-#include "Helpers.h"
+#include "../Helpers.h"
 
 class AppWindow {
 public:

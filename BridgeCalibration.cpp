@@ -8,7 +8,7 @@
 #include <condition_variable> // std::condition_variable, std::cv_status
 #include <format>
 #include <process.hpp>
-#include "alert_exception.h"
+#include "Structures/AlertException.h"
 #include "Helpers.h"
 #ifdef _WIN32
 #include <io.h>
@@ -127,7 +127,7 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	thread.join();
 	if (alerts.tellp() > 0)
 	{
-		throw alert_exception(alerts.str());
+		throw AlertException(alerts.str());
 	}
 	return result;
 }

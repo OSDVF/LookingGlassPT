@@ -1,5 +1,5 @@
 #include "AppWindow.h"
-#include "impl/sdl_event_to_string.h"
+#include "../impl/sdl_event_to_string.h"
 
 AppWindow::AppWindow(const char* name, float x, float y, float w, float h)
 {

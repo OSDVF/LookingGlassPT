@@ -4,7 +4,7 @@
 #include "FirstPersonController.h"
 #include "Calibration.h"
 
-namespace ProjectSettings {
+namespace SceneAndViewSettings {
 	inline Calibration calibration;
 	inline float fov = 60;
 	inline float mouseX = 100;

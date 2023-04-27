@@ -14,8 +14,8 @@
 #include "impl/imgui_impl_sdl.h"
 #include "impl/sdl_event_to_string.h"
 #include "imgui_internal.h"
-#include "ControlWindow.h"
-#include "ProjectWindow.h"
+#include "Window/ControlWindow.h"
+#include "Window/ProjectWindow.h"
 
 #define WINDOW_X 5
 #define WINDOW_Y 100

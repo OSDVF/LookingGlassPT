@@ -12,8 +12,8 @@
 #include <glm/gtx/quaternion.hpp>
 #include "GlHelpers.h"
 #include "Helpers.h"
-#include "Settings.h"
-#include "SceneObjects.h"
+#include "Structures/SceneAndViewSettings.h"
+#include "../Structures/SceneObjects.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
@@ -25,7 +25,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-using namespace ProjectSettings;
+using namespace SceneAndViewSettings;
 class ProjectWindow : public AppWindow {
 public:
 	GLuint fShader;
@@ -107,7 +107,7 @@ public:
 	void setupGL() override
 	{
 		AppWindow::setupGL();
-		if (ProjectSettings::debugOutput != DEBUG_SEVERITY_NOTHING)
+		if (SceneAndViewSettings::debugOutput != DEBUG_SEVERITY_NOTHING)
 		{
 			GlHelpers::initCallback();
 		}
@@ -317,7 +317,7 @@ public:
 		glUniform1f(shaderInputs.uViewCone, glm::radians(viewCone));
 		glUniform1f(shaderInputs.uFocusDistance, focusDistance);
 		glUniform2f(shaderInputs.uMouse, mouseX, mouseY);
-		if (!ProjectSettings::subpixelOnePass && GlobalScreenType == ScreenType::LookingGlass)
+		if (!SceneAndViewSettings::subpixelOnePass && GlobalScreenType == ScreenType::LookingGlass)
 		{
 			switch (currentSubpixel)
 			{
@@ -338,14 +338,14 @@ public:
 				currentSubpixel = 0;
 			}
 		}
-		if (ProjectSettings::pathTracing)
+		if (SceneAndViewSettings::pathTracing)
 		{
 			glUniform1f(shaderInputs.uInvRayCount, 1.f / ((float)rayIteration));
-			glUniform1ui(shaderInputs.uRayIndex, ProjectSettings::rayIteration += currentSubpixel / 2);
+			glUniform1ui(shaderInputs.uRayIndex, SceneAndViewSettings::rayIteration += currentSubpixel / 2);
 			glUniform1f(shaderInputs.uRayOffset, rayOffset);
 			if (rayIteration > maxIterations)
 			{
-				ProjectSettings::pathTracing = false;
+				SceneAndViewSettings::pathTracing = false;
 			}
 		}
 		else
@@ -355,7 +355,7 @@ public:
 		}
 
 		// Draw full screen quad with the path tracer shader
-		if (ProjectSettings::pathTracing || rayIteration == 0)
+		if (SceneAndViewSettings::pathTracing || rayIteration == 0)
 		{
 			glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 		}
@@ -416,12 +416,12 @@ public:
 
 	void ui()
 	{
-		if (ProjectSettings::applyScreenType)
+		if (SceneAndViewSettings::applyScreenType)
 		{
-			ProjectSettings::applyScreenType = false;
+			SceneAndViewSettings::applyScreenType = false;
 			applyScreenType();
 		}
-		if (ProjectSettings::recompileFShaders)
+		if (SceneAndViewSettings::recompileFShaders)
 		{
 			recompileFShaders = false;
 			recompileFragmentSh();
@@ -437,15 +437,15 @@ public:
 			}
 			updateBuffers();
 		}
-		if (ProjectSettings::reloadScene)
+		if (SceneAndViewSettings::reloadScene)
 		{
-			ProjectSettings::reloadScene = false;
+			SceneAndViewSettings::reloadScene = false;
 			clearBuffers();
 
 
 			try
 			{
-				Import3DFromFile(ProjectSettings::scene.path);
+				Import3DFromFile(SceneAndViewSettings::scene.path);
 
 				textureErrors = LoadGLTextures(gScene);
 				SubmitScene(gScene, nullptr, aiMatrix4x4(scene.scale, aiQuaternion(
@@ -584,7 +584,7 @@ public:
 				eventDriven = !eventDriven;
 				break;
 			case SDL_KeyCode::SDLK_r:
-				ProjectSettings::recompileFShaders = true;
+				SceneAndViewSettings::recompileFShaders = true;
 				break;
 			case SDL_KeyCode::SDLK_l:
 				if (GlobalScreenType == ScreenType::Flat)
@@ -595,7 +595,7 @@ public:
 				{
 					GlobalScreenType = ScreenType::Flat;
 				}
-				ProjectSettings::applyScreenType = true;
+				SceneAndViewSettings::applyScreenType = true;
 				break;
 			}
 			break;
@@ -801,7 +801,7 @@ public:
 		/* get iterator */
 		decltype(textureHandleMap)::iterator itr = textureHandleMap.begin();
 
-		std::filesystem::path sceneDir = std::filesystem::absolute(ProjectSettings::scene.path).parent_path();
+		std::filesystem::path sceneDir = std::filesystem::absolute(SceneAndViewSettings::scene.path).parent_path();
 		for (size_t i = 0; i < numTextures; i++, itr++)
 		{
 			std::string filename = (*itr).first;		// get filename
