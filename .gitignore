@@ -365,3 +365,4 @@ FodyWeavers.xsd
 /vcpkg_installed
 /imgui.ini
 CMakePresets.json
+/CMakePresets.json
