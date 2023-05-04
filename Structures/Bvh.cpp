@@ -216,7 +216,7 @@ namespace
 
 		setBounds(node, bounds.m_min, bounds.m_max);
 		node.bboxCenter = bounds.center();
-		node.prim = BVHNode::InvalidMask;
+		node.triangleIndex = BVHNode::InvalidMask;
 
 		nodes[node.left].parent = nodeId;
 		nodes[node.right].parent = nodeId;
@@ -262,24 +262,24 @@ void BVHBuilder::build(std::vector<FastTriangle> triangles)
 	tempNodes.reserve(primCount * 2 - 1);
 
 	// Build leaf nodes
-	for (GLuint primId = 0; primId < triangles.size(); ++primId)
+	for (GLuint triangleIndex = 0; triangleIndex < triangles.size(); ++triangleIndex)
 	{
 		TempNode node;
 		Box3 box;
 		box.expandInit();
 
-		auto triangle = triangles[primId].toClassic();
+		auto triangle = triangles[triangleIndex].toClassic();
 
 		box.expand(triangle[0]);
 		box.expand(triangle[1]);
 		box.expand(triangle[2]);
 
-		node.primArea = triangles[primId].calculateArea();
+		node.primArea = triangles[triangleIndex].calculateArea();
 
 		setBounds(node, box.m_min, box.m_max);
 
 		node.bboxCenter = box.center();
-		node.prim = primId;
+		node.triangleIndex = triangleIndex;
 		node.left = BVHNode::InvalidMask;
 		node.right = BVHNode::InvalidMask;
 		tempNodes.push_back(node);
@@ -305,7 +305,7 @@ void BVHBuilder::build(std::vector<FastTriangle> triangles)
 		glm::vec3 bboxMax(oldNode.bboxMax);
 		setBounds(newNode, bboxMin, bboxMax);
 
-		newNode.prim = oldNode.prim;
+		newNode.triangleIndex = oldNode.triangleIndex;
 		newNode.next = oldNode.next == BVHNode::InvalidMask
 			? BVHNode::InvalidMask
 			: tempNodes[oldNode.next].visitOrder;
@@ -333,10 +333,10 @@ void BVHBuilder::build(std::vector<FastTriangle> triangles)
 
 			BVHPrimitiveNode packedNode;
 
-			auto triangle = triangles[node.prim].toClassic();
+			auto triangle = triangles[node.triangleIndex].toClassic();
 
 			packedNode.edge0 = triangle[1] - triangle[0];
-			packedNode.prim = node.prim + (GLuint)tempNodes.size() * 2;
+			packedNode.prim = node.triangleIndex;
 
 			packedNode.edge1 = triangle[2] - triangle[0];
 			packedNode.next = node.next;
@@ -354,7 +354,7 @@ void BVHBuilder::build(std::vector<FastTriangle> triangles)
 			BVHNode packedNode;
 
 			packedNode.bboxMin = node.bboxMin;
-			packedNode.prim = node.prim;
+			packedNode.triangleIndex = node.triangleIndex;
 			packedNode.bboxMax = node.bboxMax;
 			packedNode.next = node.next;
 

@@ -14,12 +14,12 @@ struct BVHNode
 	static const GLuint InvalidMask = 0xFFFFFFFF;
 
 	glm::vec3 bboxMin;
-	GLuint prim = InvalidMask;
+	GLuint triangleIndex = InvalidMask;
 
 	glm::vec3 bboxMax;
 	GLuint next = InvalidMask;
 
-	bool isLeaf() const { return prim != InvalidMask; }
+	bool isLeaf() const { return triangleIndex != InvalidMask; }
 };
 
 struct BVHPackedNode

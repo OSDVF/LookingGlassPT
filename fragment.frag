@@ -110,6 +110,13 @@ struct Material {
     float transparency;
 };
 
+ // unpacked node
+struct BVHNode
+{
+	vec4 bboxMin;
+	vec4 bboxMax;
+};
+
 layout(std430, binding = 6) readonly buffer TriangleBuffer {
     Triangle[] triangles;
 };
@@ -120,6 +127,10 @@ layout(std430, binding = 7) readonly buffer MaterialBuffer {
 
 layout(std430, binding = 8) readonly buffer LightBuffer {
     Light[] lights;
+};
+
+layout(std430, binding = 9) readonly buffer BVHBuffer {
+    vec4[] bvh;//packed nodes and vertices at the leaf level
 };
 
 
@@ -456,15 +467,26 @@ float xorTextureGradBox( in vec2 pos, in vec2 ddx, in vec2 ddy )
     return xor;
 }
 
-void testVisibility(ObjectDefinition obj, Ray ray, inout Hit closestHit)
+void testVisibility(Ray ray, inout Hit closestHit)
 {
-    // If the ray intersects the bounding box
-    if(rayBoxIntersection(vec3(obj.aabbMinX,obj.aabbMinY,obj.aabbMinZ), vec3(obj.aabbMaxX,obj.aabbMaxY,obj.aabbMaxZ), ray))
-    {
-        // For each object's triangle
-        for(uint i = 0; i < obj.triNumber; i++)
+    // Traverse BVH
+    // Adapted from https://github.com/kayru/RayTracedShadows/blob/master/Source/Shaders/RayTracedShadows.comp
+    uint nodeIndex = 0;
+
+    uint lastNode = (bvh.length()/2);
+     
+	while(nodeIndex < lastNode)
+	{
+        BVHNode node;
+        node.bboxMin = bvh[nodeIndex * 2];
+        node.bboxMax = bvh[nodeIndex * 2 + 1];
+
+        uint primitiveIndex = floatBitsToUint(node.bboxMin.w);
+
+        bool isLeaf = primitiveIndex != 0xFFFFFFFF;
+        if(isLeaf)
         {
-            Triangle tri = triangles[obj.firstTriangle + i];
+            Triangle tri = triangles[primitiveIndex];
             float outT, outU, outV;
             if(embreeIntersect(
                 tri,
@@ -472,6 +494,7 @@ void testVisibility(ObjectDefinition obj, Ray ray, inout Hit closestHit)
                 closestHit.rayT, outU, outV))
             //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz), vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz) + tri.v0, outT, outV, outU))
             {
+                ObjectDefinition obj = objectDefinitions[0];
                 closestHit.vboStartIndex = obj.vboStartIndex;
                 closestHit.attrs = obj.vertexAttrs;
                 closestHit.material = obj.material;
@@ -479,8 +502,17 @@ void testVisibility(ObjectDefinition obj, Ray ray, inout Hit closestHit)
                 closestHit.barycentric = vec2(outV, outU);
                 closestHit.indices = tri.attributeIndices.xyz;
                 closestHit.normal = vec3(tri.normalX, tri.normalY, tri.normalZ);
+                return;
             }
         }
+        else if (rayBoxIntersection(node.bboxMin.xyz, node.bboxMax.xyz, ray))
+		{
+			// If the ray intersects the bounding box
+            ++nodeIndex;
+            continue;
+        }
+
+        nodeIndex = floatBitsToUint(node.bboxMax.w);
     }
 }
 
@@ -488,11 +520,7 @@ bool resolveRay(Ray ray, float far, out vec3 albedo, out vec3 normal, out vec3 e
 {
     Hit closestHit;
     closestHit.rayT = far;
-    for (uint o = 0; o < uObjectCount; o++)
-    {
-        ObjectDefinition obj = objectDefinitions[o];
-        testVisibility(obj, ray, closestHit);
-    }
+    testVisibility(ray, closestHit);
     if(closestHit.rayT != far)
     {
         // Interpolate other triangle attributes by barycentric coordinates
@@ -633,16 +661,8 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
                         float far = length(dirToLight);
                         Ray shadowRay = Ray(position, dirToLight / far);
                         Hit closestHit;
-                        closestHit.rayT = far;//constant far plane for 
-                        for(uint o = 0; o < uObjectCount && closestHit.rayT == far; o++)
-				        {
-                            if(o == lights[0].object)
-                            {
-                                continue;
-                            }
-                            ObjectDefinition obj = objectDefinitions[o];
-                            testVisibility(obj, shadowRay, closestHit);
-                        }
+                        closestHit.rayT = far;//constant far plane 
+                        testVisibility(shadowRay, closestHit);
                         if(closestHit.rayT == far) {
 					        vec3 Le = light.color.xyz;
 					        contrib += throughput * (Le * w * brdf) / light_pdf;
