@@ -39,11 +39,32 @@ Calibration result;
 std::stringstream alerts;
 Calibration BridgeCalibration::getCalibration(HoloDevice device)
 {
+	const std::string allowAwaitArg16 = "--harmony-top-level-await";
+	const std::string allowAwaitArg18 = "--experimental-repl-await";
+	std::string alllowAwaitArgument = allowAwaitArg16;
+
 	std::mutex mtx;
 	std::unique_lock<std::mutex> lck(mtx);
 
 	std::cout << "Checking Node.js version" << std::endl;
-	Process nodeExists("node -v");
+	Process nodeExists("node -v", "", [&](const char* bytes, size_t n) {
+		//Extract the major version
+		std::string version(bytes, n);
+		if (version.starts_with("v"))
+		{
+			version = version.substr(1);
+		}
+		auto dot = version.find('.');
+		if (dot != std::string::npos)
+		{
+			version = version.substr(0, dot);
+		}
+		if (std::stoi(version) > 16)
+		{
+			alllowAwaitArgument = allowAwaitArg18;
+		}
+		}
+	);
 	if (nodeExists.get_exit_status() != 0)
 	{
 		char choice = 'y';
@@ -65,44 +86,45 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 #ifdef _DEBUG
 			"--unhandled-rejections=strict "
 #endif
-			"--harmony-top-level-await {}",
+			"{} {}",
+			alllowAwaitArgument,
 			Helpers::relativeToExecutable("index.js").string()
 		), "",
 		[&](const char* bytes, size_t n)
 		{
 			auto stringVersion = std::string(bytes, n);
-	if (stringVersion.starts_with("alert: "))
-	{
-		alerts << stringVersion.substr(7) << std::endl;
-	}
-	else
-	{
-		std::cout << "Looking Glass Bridge: " << stringVersion;
-	}
-	try
-	{
-		auto parsed = nlohmann::json::parse(stringVersion);
-		bool correctFormat = true;
-		for (int i = 0; i < calibrationProperties.size(); i++)
-		{
-			if (!parsed.contains(calibrationProperties[i]))
+			if (stringVersion.starts_with("alert: "))
 			{
-				correctFormat = false;
-				std::cerr << "Ignored this JSON because it does not contain " << calibrationProperties[i] << std::endl;
-				break;
+				alerts << stringVersion.substr(7) << std::endl;
 			}
-		}
-		if (correctFormat)
-		{
-			// Finally success
-			result = jsonToCaibration(parsed);
-			cv.notify_one();
-		}
-	}
-	catch (const nlohmann::json::exception& e)
-	{
-		std::cout << "Could not parse that into JSON" << std::endl;
-	}
+			else
+			{
+				std::cout << "Looking Glass Bridge: " << stringVersion;
+			}
+			try
+			{
+				auto parsed = nlohmann::json::parse(stringVersion);
+				bool correctFormat = true;
+				for (int i = 0; i < calibrationProperties.size(); i++)
+				{
+					if (!parsed.contains(calibrationProperties[i]))
+					{
+						correctFormat = false;
+						std::cerr << "Ignored this JSON because it does not contain " << calibrationProperties[i] << std::endl;
+						break;
+					}
+				}
+				if (correctFormat)
+				{
+					// Finally success
+					result = jsonToCaibration(parsed);
+					cv.notify_one();
+				}
+			}
+			catch (const nlohmann::json::exception& e)
+			{
+				std::cout << "Could not parse that into JSON" << std::endl;
+			}
 		},
 		[&](const char* bytes, size_t n) {
 			auto stringVersion = std::string(bytes, n);
@@ -111,9 +133,9 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 			{
 				alerts << "No Looking Glass devices connected." << std::endl;
 			}
-		// Add a newline for prettier output on some platforms:
-		if (bytes[n - 1] != '\n')
-			std::cout << std::endl;
+			// Add a newline for prettier output on some platforms:
+			if (bytes[n - 1] != '\n')
+				std::cout << std::endl;
 		}
 		);
 	int exit_status;

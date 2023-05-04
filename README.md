@@ -131,7 +131,7 @@ Different view
 
 # Thanks to
 - [Department of Computer Graphics and Multimedia at FIT BUT](https://www.fit.vut.cz/units/upgm/.en) - for borrowing me a Looking Glass display and ray generation algorithm
-- [kayru/RayTracedShadows](https://github.com/kayru/RayTracedShadows) - BVH inspiration
+- [kayru/RayTracedShadows](https://github.com/kayru/RayTracedShadows) - BVH construction
 - [3DApps](https://github.com/dormon/3DApps) - LG USB Calibration
 - [Embree-style Möller-Trumbore ray-triangle intersection](https://www.shadertoy.com/view/llGSDD)
 - [Scene loading](https://github.com/assimp/assimp/blob/master/samples/SimpleTexturedOpenGL/SimpleTexturedOpenGL/src/model_loading.cpp) - assimp example

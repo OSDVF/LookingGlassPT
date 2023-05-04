@@ -14,6 +14,7 @@
 #include "Helpers.h"
 #include "Structures/SceneAndViewSettings.h"
 #include "../Structures/SceneObjects.h"
+#include "../Structures/Bvh.h"
 
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
@@ -41,6 +42,7 @@ public:
 		GLuint objects;
 		GLuint material;
 		GLuint lights;
+		GLuint bvh;
 	} bufferHandles;
 	struct BufferDefinition {
 		GLuint index;
@@ -74,13 +76,16 @@ public:
 		BufferDefinition Triangles;
 		BufferDefinition Material;
 		BufferDefinition Lights;
+		BufferDefinition BVH;
 	} shaderInputs;
 
 	anyVector vertexAttrs;
+	// The rendering is non-indexed
 	std::vector<FastTriangle> triangles;
 	std::vector<SceneObject> objects;
 	std::vector<Material> materials;
 	std::vector<Light> lights;
+	BVHBuilder bvhBuilder;
 	uint32_t rayNumber;
 	uint32_t raySalt;
 
@@ -164,6 +169,10 @@ public:
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.lights);
 		glBufferData(GL_SHADER_STORAGE_BUFFER, lights.size() * sizeof(Light), lights.data(), GL_STATIC_READ);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Lights.location, bufferHandles.lights);
+
+		glGenBuffers(1, &bufferHandles.bvh);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.bvh);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.BVH.location, bufferHandles.bvh);
 
 		createFullScreenImageBuffer(shaderInputs.uScreenAlbedo.texture, shaderInputs.uScreenAlbedo.unit);
 		createFullScreenImageBuffer(shaderInputs.uScreenNormal.texture, shaderInputs.uScreenNormal.unit);
@@ -266,6 +275,10 @@ public:
 			{
 				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "LightBuffer"),
 				8
+			},
+			{
+				glGetProgramResourceIndex(program, GL_SHADER_STORAGE_BLOCK,   "BVHBuffer"),
+				9
 			},
 		};
 		glGetActiveUniformBlockiv(program, shaderInputs.uCalibration.index, GL_UNIFORM_BLOCK_BINDING, &shaderInputs.uCalibration.location);
@@ -452,6 +465,9 @@ public:
 					glm::radians(scene.rotationDeg.x), glm::radians(scene.rotationDeg.y), glm::radians(scene.rotationDeg.z)
 				), scene.position));
 
+				
+				bvhBuilder.build(triangles);
+
 				if (!textureErrors.empty())
 				{
 					ImGui::OpenPopup(textureLoadingFailed);
@@ -532,6 +548,7 @@ public:
 		updateFlexibleBuffer(bufferHandles.triangles, triangles);
 		updateFlexibleBuffer(bufferHandles.material, materials);
 		updateFlexibleBuffer(bufferHandles.lights, lights);
+		updateFlexibleBuffer(bufferHandles.bvh, bvhBuilder.m_packedNodes);
 		updateCalibrationBuffer();
 		submitObjectBuffer();
 	}

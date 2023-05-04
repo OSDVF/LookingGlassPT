@@ -6,18 +6,18 @@ cmake_minimum_required (VERSION 3.8)
 project ("LookingGlassPT")
 
 file(GLOB all_SRCS
-        "${PROJECT_SOURCE_DIR}/impl/*.h"
-        "${PROJECT_SOURCE_DIR}/impl/*.hpp"
-        "${PROJECT_SOURCE_DIR}/impl/*.cpp"
-        "${PROJECT_SOURCE_DIR}/impl/*.c"
-        "${PROJECT_SOURCE_DIR}/*.c"
         "${PROJECT_SOURCE_DIR}/*.h"
+        "${PROJECT_SOURCE_DIR}/impl/*.h"
         "${PROJECT_SOURCE_DIR}/Window/*.h"
         "${PROJECT_SOURCE_DIR}/Structures/*.h"
+        "${PROJECT_SOURCE_DIR}/*.c"
+        "${PROJECT_SOURCE_DIR}/impl/*.c"
         "${PROJECT_SOURCE_DIR}/*.cpp"
+        "${PROJECT_SOURCE_DIR}/impl/*.cpp"
         "${PROJECT_SOURCE_DIR}/Window/*.cpp"
         "${PROJECT_SOURCE_DIR}/Structures/*.cpp"
         "${PROJECT_SOURCE_DIR}/*.hpp"
+        "${PROJECT_SOURCE_DIR}/impl/*.hpp"
         )
 
 # Add source to this project's executable.
