@@ -6,10 +6,10 @@
 #include <chrono>
 #include <mutex>              // std::mutex, std::unique_lock
 #include <condition_variable> // std::condition_variable, std::cv_status
-#include <format>
+#include <fmt/core.h>
 #include <process.hpp>
-#include "Structures/AlertException.h"
-#include "Helpers.h"
+#include "../Structures/AlertException.h"
+#include "../Helpers.h"
 #ifdef _WIN32
 #include <io.h>
 #else
@@ -81,7 +81,7 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	}
 
 	Process process(
-		std::format(
+		fmt::format(
 			"node "
 #ifdef _DEBUG
 			"--unhandled-rejections=strict "
@@ -144,7 +144,7 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	{
 		process.kill();
 		thread.detach();
-		throw std::runtime_error(std::format("Looking Glass Bridge not responding in {} seconds", TIMEOUT));
+		throw std::runtime_error(fmt::format("Looking Glass Bridge not responding in {} seconds", TIMEOUT));
 	}
 	thread.join();
 	if (alerts.tellp() > 0)

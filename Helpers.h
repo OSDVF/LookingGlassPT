@@ -40,10 +40,8 @@ namespace Helpers
 		const float kSysDefaultDpi =
 #ifdef __APPLE__
 			72.0f;
-#elif defined(_WIN32)
-			96.0f;
 #else
-			static_assert(false, "No system default DPI set for this platform.");
+			96.0f;
 #endif
 
 		if (SDL_GetDisplayDPI(displayIndex, NULL, dpi, NULL) != 0)

@@ -5,6 +5,7 @@
 #include <assimp/vector3.h>
 #include <assimp/vector2.h>
 #include <assimp/color4.h>
+#include <fstream>
 #define GLSL_VERSION 430
 
 namespace GlHelpers {
@@ -17,13 +18,12 @@ namespace GlHelpers {
 	{
 		std::cout << "Compiling shader " << filename << std::endl;
 		shader = glCreateShader(SHADER_TYPE);
-		std::ifstream t;
-		t.open(filename);
+		std::ifstream t(filename);
 		t.seekg(0, std::ios::end);
 		GLint size = t.tellg();
 		if (size <= 0)
 		{
-			throw std::runtime_error(std::format("Shader file {} not found or empty.", filename));
+			throw std::runtime_error(fmt::format("Shader file {} not found or empty.", filename));
 		}
 		std::string buffer(size, ' ');
 		t.seekg(0);

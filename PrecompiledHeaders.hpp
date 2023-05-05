@@ -8,7 +8,7 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
-#include <format>
+#include <fmt/core.h>
 #include <condition_variable>
 #include <nlohmann/json.hpp>
 

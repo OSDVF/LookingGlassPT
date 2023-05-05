@@ -12,6 +12,7 @@
     "assimp",
     "stb",
     "nativefiledialog",
-    "boost-stacktrace"
+    "boost-stacktrace",
+    "fmt"
   ]
 }

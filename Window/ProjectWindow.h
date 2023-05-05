@@ -10,9 +10,9 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
-#include "GlHelpers.h"
-#include "Helpers.h"
-#include "Structures/SceneAndViewSettings.h"
+#include "../GlHelpers.h"
+#include "../Helpers.h"
+#include "../Structures/SceneAndViewSettings.h"
 #include "../Structures/SceneObjects.h"
 #include "../Structures/Bvh.h"
 
@@ -305,7 +305,7 @@ public:
 		}
 		try {
 			std::string fragSource = Helpers::relativeToExecutable("fragment.frag").string();
-			auto bouncesDefine = std::format("MAX_BOUNCES {}", maxBounces);
+			auto bouncesDefine = fmt::format("MAX_BOUNCES {}", maxBounces);
 			auto subpixelOnePassDefine = std::string(subpixelOnePass ? "SUBPIXEL_ONE_PASS" : "SUBPIXEL_MULTI_PASS");
 			auto cullingDefine = std::string(backfaceCulling ? "CULLING" : "NO_CULLING");
 			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine, cullingDefine });
@@ -465,7 +465,7 @@ public:
 					glm::radians(scene.rotationDeg.x), glm::radians(scene.rotationDeg.y), glm::radians(scene.rotationDeg.z)
 				), scene.position));
 
-				
+
 				bvhBuilder.build(triangles);
 
 				if (!textureErrors.empty())
@@ -719,7 +719,7 @@ public:
 		else
 		{
 			logInfo(importer.GetErrorString());
-			throw std::runtime_error(std::format("Could not open scene file {}: \n{}", pFile.string(), importer.GetErrorString()));
+			throw std::runtime_error(fmt::format("Could not open scene file {}: \n{}", pFile.string(), importer.GetErrorString()));
 		}
 
 		gScene = importer.ReadFile(pFile.string(), aiProcessPreset_TargetRealtime_Quality | aiPostProcessSteps::aiProcess_FlipUVs | aiPostProcessSteps::aiProcess_FixInfacingNormals);
@@ -728,7 +728,7 @@ public:
 		if (!gScene)
 		{
 			logInfo(importer.GetErrorString());
-			throw std::runtime_error(std::format("Import failed:\n{}", importer.GetErrorString()));
+			throw std::runtime_error(fmt::format("Import failed:\n{}", importer.GetErrorString()));
 		}
 
 		// Now we can access the file's contents.
@@ -776,7 +776,7 @@ public:
 					break;
 				}
 				std::cout << std::endl;
-		}
+			}
 #endif
 			auto texCount = material->GetTextureCount(aiTextureType_DIFFUSE);
 			std::cout << "has " << texCount << " diff textures." << std::endl;
@@ -805,7 +805,7 @@ public:
 					std::reference_wrapper(invalidHandle), GLuint64(-1)
 				)); //fill map with texture paths, handles are still pseudo-NULL yet
 			}
-	}
+		}
 
 		const size_t numTextures = textureHandleMap.size();
 
@@ -888,7 +888,7 @@ public:
 		}
 		std::cerr << ss.rdbuf();
 		return ss.str();
-}
+	}
 
 	void SubmitMaterial(const aiMaterial* mtl)
 	{
@@ -1069,14 +1069,14 @@ public:
 				auto areaSize = glm::distance(aabbMin, aabbMax);
 				if (materials[materialIndex].isTexture & 2)
 				{
-					lights.push_back(Light(
+					lights.push_back({
 						glm::mix(aabbMin, aabbMax, 0.5f),
 						areaSize,
 						glm::normalize(averageNormal),
 						areaSize * areaSize,
 						lightMultiplier * glm::vec4(1),
-						objects.size()
-					));
+						(uint32_t)objects.size()
+						});
 				}
 				else
 				{
@@ -1087,7 +1087,7 @@ public:
 						glm::normalize(averageNormal),
 						areaSize * areaSize,
 						glm::vec4(thisEmission,1.f),
-						objects.size()
+						(uint32_t)objects.size()
 					};
 					lights.push_back(currentLight);
 				}

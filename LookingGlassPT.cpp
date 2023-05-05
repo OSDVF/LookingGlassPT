@@ -283,7 +283,7 @@ bool checkExtensions()
 		{
 			const char* extension =
 				(const char*)glGetStringi(GL_EXTENSIONS, i);
-			std::cout << std::format("{}: {}\n", i, extension) << std::endl;
+			std::cout << fmt::format("{}: {}\n", i, extension) << std::endl;
 		}
 		return false;
 	}

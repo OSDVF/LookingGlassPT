@@ -1,0 +1,13 @@
+{
+    "cmake.configureArgs": [
+        "-DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    ],
+    "files.associations": {
+        "*.frag": "c",
+        "*.glsl": "glsl",
+        "*.c": "cpp",
+        "*.fx": "glsl",
+        "complex": "cpp",
+        "string": "cpp"
+    },
+}

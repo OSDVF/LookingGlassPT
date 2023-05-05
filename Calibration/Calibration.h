@@ -1,5 +1,5 @@
 #pragma once
-#include "PrecompiledHeaders.hpp"
+#include "../PrecompiledHeaders.hpp"
 #include <ostream>
 
 struct Calibration {
@@ -17,9 +17,9 @@ struct Calibration {
 	float flipImageY;
 	float flipSubp;
 
-	float recalculatedPitch() const { return pitch * (screenW / DPI) * cos(atan(1.0f / slope)); }
-	float tilt() const { return (screenH / (screenW * slope)) * ((flipImageX == 1.0f) ? -1 : 1); }
-	float subp() const { return 1.0f / (screenW * 3.0f); }
+	float recalculatedPitch() const;
+	float tilt() const;
+	float subp() const;
 
 	struct ForShader {
 		float pitch;
@@ -28,12 +28,7 @@ struct Calibration {
 		float subp;//This is not really used
 		glm::vec2 resolution;
 	};
-	ForShader forShader()
-	{
-		return {
-			recalculatedPitch(), tilt(), center, subp(), {screenW, screenH}
-		};
-	}
+	ForShader forShader();
 
 	friend std::ostream& operator<<(std::ostream& os, Calibration const& cal) {
 		return os << "Pitch:\t" << cal.pitch << std::endl
@@ -62,26 +57,8 @@ struct HoloDevice {
 class CalibrationQuery {
 public:
 	virtual Calibration getCalibration(HoloDevice device) = 0;
-	Calibration getCalibration() {
-		return getCalibration(getDevices().front());
-	}
+	Calibration getCalibration();
 	virtual std::vector<HoloDevice> getDevices() = 0;
 
-	Calibration jsonToCaibration(nlohmann::json j)
-	{
-		return Calibration{
-			static_cast<float>(j["pitch"]["value"]),
-			static_cast<float>(j["slope"]["value"]),
-			static_cast<float>(j["center"]["value"]),
-			static_cast<float>(j["viewCone"]["value"]),
-			static_cast<float>(j["invView"]["value"]),
-			static_cast<float>(j["verticalAngle"]["value"]),
-			static_cast<float>(j["DPI"]["value"]),
-			static_cast<float>(j["screenW"]["value"]),
-			static_cast<float>(j["screenH"]["value"]),
-			static_cast<float>(j["flipImageX"]["value"]),
-			static_cast<float>(j["flipImageY"]["value"]),
-			static_cast<float>(j["flipSubp"]["value"]),
-		};
-	}
+	Calibration jsonToCaibration(nlohmann::json j);
 };

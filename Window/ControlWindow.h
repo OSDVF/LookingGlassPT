@@ -2,9 +2,9 @@
 #include "AppWindow.h"
 #include "../Structures/SceneAndViewSettings.h"
 #include "../Structures/AlertException.h"
-#include "UsbCalibration.h"
-#include "BridgeCalibration.h"
-#include "GlHelpers.h"
+#include "../Calibration/UsbCalibration.h"
+#include "../Calibration/BridgeCalibration.h"
+#include "../GlHelpers.h"
 #include <imgui.h>
 #include <array>
 #include <nfd.h>
@@ -198,7 +198,7 @@ public:
 				{
 					ImGui::SameLine();
 				}
-				if (ImGui::Button(std::format("W {}", i).c_str()))
+				if (ImGui::Button(fmt::format("W {}", i).c_str()))
 				{
 					window->show();
 				}

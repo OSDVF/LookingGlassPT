@@ -10,18 +10,24 @@ file(GLOB all_SRCS
         "${PROJECT_SOURCE_DIR}/impl/*.h"
         "${PROJECT_SOURCE_DIR}/Window/*.h"
         "${PROJECT_SOURCE_DIR}/Structures/*.h"
+        "${PROJECT_SOURCE_DIR}/Calibration/*.h"
         "${PROJECT_SOURCE_DIR}/*.c"
         "${PROJECT_SOURCE_DIR}/impl/*.c"
         "${PROJECT_SOURCE_DIR}/*.cpp"
         "${PROJECT_SOURCE_DIR}/impl/*.cpp"
         "${PROJECT_SOURCE_DIR}/Window/*.cpp"
         "${PROJECT_SOURCE_DIR}/Structures/*.cpp"
+        "${PROJECT_SOURCE_DIR}/Calibration/*.cpp"
         "${PROJECT_SOURCE_DIR}/*.hpp"
         "${PROJECT_SOURCE_DIR}/impl/*.hpp"
         )
 
 # Add source to this project's executable.
 add_executable (LookingGlassPT ${all_SRCS})
+
+if (CMAKE_VERSION VERSION_GREATER 3.12)
+  set_property(TARGET LookingGlassPT PROPERTY CXX_STANDARD 20)
+endif()
 
 find_package(SDL2 CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT
@@ -61,29 +67,30 @@ find_package(Boost REQUIRED)
 INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR} )
 target_link_libraries(LookingGlassPT PUBLIC ${Boost_LIBRARIES})
 
+find_package(fmt REQUIRED)
+target_link_libraries(LookingGlassPT PRIVATE fmt::fmt)
+
 # 
 # Include node.js program in the compilation
 # depends on npm
 #
-configure_file(index.js index.js COPYONLY)
-configure_file(package.json package.json COPYONLY)
+if(COMMAND npm)
+  configure_file(index.js index.js COPYONLY)
+  configure_file(package.json package.json COPYONLY)
 
-add_custom_command(OUTPUT node_modules COMMAND npm install) # install dependencies
-add_custom_target(nodejs_program ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/node_modules) 
-add_dependencies(LookingGlassPT nodejs_program)
+  add_custom_command(OUTPUT node_modules COMMAND npm install) # install dependencies
+  add_custom_target(nodejs_program ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/node_modules) 
+  add_dependencies(LookingGlassPT nodejs_program)
+endif()
 
 set(SHADERS vertex.vert fragment.frag)
 foreach(CurrentShader IN LISTS SHADERS)
     add_custom_command(OUTPUT ${CurrentShader}
         MAIN_DEPENDENCY ${PROJECT_SOURCE_DIR}/${CurrentShader}
         COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/${CurrentShader} ${CMAKE_CURRENT_BINARY_DIR})
-    add_custom_target("${CurrentShader}target" ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CurrentShader}) 
-    add_dependencies(LookingGlassPT "${CurrentShader}target")
+    add_custom_target("${CurrentShader}-shader" ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${CurrentShader}) 
+    add_dependencies(LookingGlassPT "${CurrentShader}-shader")
 endforeach()
-
-if (CMAKE_VERSION VERSION_GREATER 3.12)
-  set_property(TARGET LookingGlassPT PROPERTY CXX_STANDARD 20)
-endif()
 
 if(ASAN_ENABLED)
   if(MSVC)

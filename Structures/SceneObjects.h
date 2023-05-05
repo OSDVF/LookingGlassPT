@@ -1,8 +1,8 @@
 #pragma once
+#include "../PrecompiledHeaders.hpp"
 #include <cstdint>
 #include <bitset>
 #include <type_traits>
-#include <glm/glm.hpp>
 #include <sstream>
 
 inline std::string debugArray(const char* data, size_t len, bool fl) {
@@ -221,7 +221,7 @@ struct SceneObject {
 class anySized
 {
 public:
-	void* data = nullptr;
+	std::byte* data = nullptr;
 	std::size_t size = 0;
 	const std::type_info& type;
 	template <typename T>

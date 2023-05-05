@@ -1,8 +1,8 @@
 #pragma once
 #include <filesystem>
 #include <assimp/vector3.h>
-#include "FirstPersonController.h"
-#include "Calibration.h"
+#include "../FirstPersonController.h"
+#include "../Calibration/Calibration.h"
 
 namespace SceneAndViewSettings {
 	inline Calibration calibration;
