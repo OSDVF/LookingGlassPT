@@ -22,4 +22,4 @@ globalThis.confirm = function (message)
 }
 globalThis.Holoplay = require('holoplay');
 console.log(JSON.stringify(await Holoplay.Calibration.getCalibration()));
-process.exit()
+process.exit(0)

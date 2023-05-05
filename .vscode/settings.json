@@ -107,4 +107,5 @@
         "ios": "cpp",
         "locale": "cpp"
     },
+    "cmake.configureOnOpen": false,
 }
