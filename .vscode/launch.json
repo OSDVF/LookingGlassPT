@@ -11,7 +11,7 @@
             "program": "${workspaceFolder}/build/LookingGlassPT",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [
                 {
                     "name": "__NV_PRIME_RENDER_OFFLOAD",
@@ -24,6 +24,18 @@
                 {
                     "name": "__GLX_VENDOR_LIBRARY_NAME",
                     "value": "nvidia"
+                },
+                {
+                    "name": "__GL_SHADER_DISK_CACHE_SKIP_CLEANUP",
+                    "value": "1"
+                },
+                {
+                    "name": "__GL_SHADER_DISK_CACHE_PATH",
+                    "value": "${workspaceFolder}/build"
+                },
+                {
+                    "name": "__GL_SHADER_DISK_CACHE",
+                    "value": "1"
                 }
             ],
             "externalConsole": false,
@@ -39,7 +51,8 @@
                     "text": "-gdb-set disassembly-flavor intel",
                     "ignoreFailures": true
                 }
-            ]
+            ],
+            "preLaunchTask": "CMake: build"
         }
     ]
 }

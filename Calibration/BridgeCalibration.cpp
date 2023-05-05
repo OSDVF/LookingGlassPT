@@ -47,21 +47,26 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	std::unique_lock<std::mutex> lck(mtx);
 
 	std::cout << "Checking Node.js version" << std::endl;
+	bool versionChecked = false;
 	Process nodeExists("node -v", "", [&](const char* bytes, size_t n) {
-		//Extract the major version
-		std::string version(bytes, n);
-		if (version.starts_with("v"))
+		if (!versionChecked)
 		{
-			version = version.substr(1);
-		}
-		auto dot = version.find('.');
-		if (dot != std::string::npos)
-		{
-			version = version.substr(0, dot);
-		}
-		if (std::stoi(version) > 16)
-		{
-			alllowAwaitArgument = allowAwaitArg18;
+			//Extract the major version
+			std::string version(bytes, n);
+			if (version.starts_with("v"))
+			{
+				version = version.substr(1);
+			}
+			auto dot = version.find('.');
+			if (dot != std::string::npos)
+			{
+				version = version.substr(0, dot);
+			}
+			if (std::stoi(version) > 16)
+			{
+				alllowAwaitArgument = allowAwaitArg18;
+			}
+			versionChecked = true;
 		}
 		}
 	);
@@ -80,7 +85,7 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 		}
 	}
 
-	Process process(
+	Process bridgeCalibrationProcess(
 		fmt::format(
 			"node "
 #ifdef _DEBUG
@@ -137,12 +142,16 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 			if (bytes[n - 1] != '\n')
 				std::cout << std::endl;
 		}
-		);
+	);
 	int exit_status;
-	std::thread thread([&]() {process.get_exit_status(); });
-	if (cv.wait_for(lck, std::chrono::seconds(TIMEOUT)) == std::cv_status::timeout && !process.try_get_exit_status(exit_status))
+	std::thread thread([&]() {
+		exit_status = bridgeCalibrationProcess.get_exit_status();
+		cv.notify_one();
+		}
+	);
+	if (!bridgeCalibrationProcess.try_get_exit_status(exit_status) && cv.wait_for(lck, std::chrono::seconds(TIMEOUT)) == std::cv_status::timeout)
 	{
-		process.kill();
+		bridgeCalibrationProcess.kill();
 		thread.detach();
 		throw std::runtime_error(fmt::format("Looking Glass Bridge not responding in {} seconds", TIMEOUT));
 	}
@@ -150,6 +159,10 @@ Calibration BridgeCalibration::getCalibration(HoloDevice device)
 	if (alerts.tellp() > 0)
 	{
 		throw AlertException(alerts.str());
+	}
+	if (exit_status != 0)
+	{
+		throw std::runtime_error(fmt::format("Node.js exited with code {}", exit_status));
 	}
 	return result;
 }
