@@ -177,9 +177,7 @@ struct DynamicSceneObject {
 
 struct SceneObject {
 	uint32_t material;
-	uint32_t vboStartIndex;
-	uint32_t indexIndex;
-	uint32_t triNumber;
+	uint32_t attrBufferPointer;
 	uint32_t vertexAttrsMask;
 	uint32_t totalAttrSize;
 	glm::vec3 aabbMin;
@@ -192,9 +190,7 @@ struct SceneObject {
 		uint32_t triNumber,
 		bool colors, bool normals, bool uvs, glm::vec3 aabbMin, glm::vec3 aabbMax) :
 		material(material),
-		vboStartIndex(vboStartIndex),
-		indexIndex(indexIndex),
-		triNumber(triNumber),
+		attrBufferPointer(vboStartIndex),
 		aabbMax(aabbMax),
 		aabbMin(aabbMin)
 	{
@@ -375,20 +371,35 @@ public:
 	}
 };
 
-/// https://github.com/embree/embree/blob/master/kernels/geometry/triangle.h
+struct FastTriangleFirstHalf {
+	glm::vec3 v0;
+	glm::vec3 edgeA;
+};
+
+struct FastTriangleSecondHalf {
+	glm::vec3 edgeB;
+	uint32_t padding;
+	glm::uvec3 indices;
+	uint32_t objectIndex;
+};
+
+/// https://github.com/embree/embree/blob/master/kernels/geometry/triangle.h combined with BVH purposes
 struct FastTriangle {
 	glm::vec3 v0;
 	glm::vec3 edgeA;
 	glm::vec3 edgeB;
-	glm::vec3 normal;
-	glm::uvec4 indices;//Indices of other vertex attributes
+	glm::uvec3 indices;//Indices of other vertex attributes
+	uint32_t objectIndex;
 
 	std::array<glm::vec3, 3> toClassic() const;
 
 	float calculateArea() const;
+	FastTriangleFirstHalf firstHalf() const;
+	FastTriangleSecondHalf secondHalf() const;
 };
 
-FastTriangle toFast(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::uvec3 indices);
+FastTriangle toFast(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2, glm::uvec3 indices, uint32_t objectIndex);
+FastTriangle toFast(FastTriangleFirstHalf first, FastTriangleSecondHalf second);
 
 struct Light {
 	glm::vec3 position;

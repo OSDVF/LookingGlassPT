@@ -31,8 +31,6 @@ uniform CalibrationBuffer {
 struct ObjectDefinition {
     uint material;
     uint vboStartIndex;
-    uint firstTriangle;
-    uint triNumber;
     uint vertexAttrs;
     uint totalAttrsSize;
     float aabbMinX;
@@ -80,22 +78,20 @@ uint subpI = uSubpI;
 layout(std430, binding = 5) readonly buffer AttributeBuffer {
     float[] dynamicVertexAttrs;
 };
-
 struct Triangle {
     vec3 v0;
-    float edgeAx;
+    vec3 edgeA;
 
-    float edgeAy;
-    float edgeAz;
-    float edgeBx;
-    float edgeBy;
+    vec3 edgeB;
 
-    float edgeBz;
-    float normalX;
-    float normalY;
-    float normalZ;
+    uvec3 attributeIndices;
+};
 
-    uvec4 attributeIndices;
+struct TriangleSecondHalf {
+    vec3 edgeB;
+    uint padding;
+    uvec3 attributeIndices;
+    uint objectIndex;
 };
 
 struct Material {
@@ -118,7 +114,7 @@ struct BVHNode
 };
 
 layout(std430, binding = 6) readonly buffer TriangleBuffer {
-    Triangle[] triangles;
+    TriangleSecondHalf[] trianglesSecond;
 };
 
 layout(std430, binding = 7) readonly buffer MaterialBuffer {
@@ -313,11 +309,11 @@ const float tNear = 0.01;
 const float tFar = 1000;
 //https://github.com/embree/embree/blob/master/kernels/geometry/triangle_intersector_moeller.h
 bool embreeIntersect(const Triangle tri, const Ray ray,
-    inout float T, out float U, out float V){
-    vec3 edgeA = vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz);
-    vec3 edgeB = vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz);
-    vec3 normal = vec3(tri.normalX,tri.normalY,tri.normalZ);
-    const float den = dot( normal, ray.direction );
+    inout float T, out float U, out float V, out vec3 normal){
+    vec3 edgeA = tri.edgeB;
+    vec3 edgeB = tri.edgeA;
+    normal = cross(tri.edgeA, tri.edgeB);
+    const float den = dot(normal, ray.direction);
     #ifdef CULLING
     if(den < 0.001)
     {
@@ -473,7 +469,7 @@ void testVisibility(Ray ray, inout Hit closestHit)
     // Adapted from https://github.com/kayru/RayTracedShadows/blob/master/Source/Shaders/RayTracedShadows.comp
     uint nodeIndex = 0;
 
-    uint lastNode = (bvh.length()/2);
+    uint lastNode = bvh.length();
      
 	while(nodeIndex < lastNode)
 	{
@@ -486,22 +482,24 @@ void testVisibility(Ray ray, inout Hit closestHit)
         bool isLeaf = primitiveIndex != 0xFFFFFFFF;
         if(isLeaf)
         {
-            Triangle tri = triangles[primitiveIndex];
+            TriangleSecondHalf triSecond = trianglesSecond[primitiveIndex];
+            Triangle tri = Triangle(node.bboxMin.xyz,node.bboxMax.xyz, triSecond.edgeB, triSecond.attributeIndices);
             float outT, outU, outV;
+            vec3 normal;
             if(embreeIntersect(
                 tri,
                 ray,
-                closestHit.rayT, outU, outV))
+                closestHit.rayT, outU, outV, normal))
             //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz), vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz) + tri.v0, outT, outV, outU))
             {
-                ObjectDefinition obj = objectDefinitions[0];
+                ObjectDefinition obj = objectDefinitions[triSecond.objectIndex];
                 closestHit.vboStartIndex = obj.vboStartIndex;
                 closestHit.attrs = obj.vertexAttrs;
                 closestHit.material = obj.material;
                 closestHit.totalAttrSize = obj.totalAttrsSize;
                 closestHit.barycentric = vec2(outV, outU);
-                closestHit.indices = tri.attributeIndices.xyz;
-                closestHit.normal = vec3(tri.normalX, tri.normalY, tri.normalZ);
+                closestHit.indices = tri.attributeIndices;
+                closestHit.normal = normalize(normal);
                 return;
             }
         }

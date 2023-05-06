@@ -9,7 +9,9 @@
 				"all"
 			],
 			"group": "build",
-			"problemMatcher": [],
+			"problemMatcher": [
+				"$gcc"
+			],
 			"detail": "CMake template build task"
 		}
 	]

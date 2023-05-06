@@ -81,7 +81,8 @@ public:
 
 	anyVector vertexAttrs;
 	// The rendering is non-indexed
-	std::vector<FastTriangle> triangles;
+	std::vector<FastTriangleFirstHalf> trianglesFirst;
+	std::vector<FastTriangleSecondHalf> trianglesSecond;
 	std::vector<SceneObject> objects;
 	std::vector<Material> materials;
 	std::vector<Light> lights;
@@ -157,7 +158,7 @@ public:
 
 		glGenBuffers(1, &bufferHandles.triangles);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferHandles.triangles);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, triangles.size() * sizeof(FastTriangle), triangles.data(), GL_STATIC_READ);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, trianglesSecond.size() * sizeof(FastTriangleSecondHalf), trianglesSecond.data(), GL_STATIC_READ);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shaderInputs.Triangles.location, bufferHandles.triangles);
 
 		glGenBuffers(1, &bufferHandles.material);
@@ -466,7 +467,7 @@ public:
 				), scene.position));
 
 
-				bvhBuilder.build(triangles);
+				bvhBuilder.build(trianglesFirst, trianglesSecond);
 
 				if (!textureErrors.empty())
 				{
@@ -486,7 +487,7 @@ public:
 				<< "Total:\n"
 				<< "Obj " << objects.size() << " (" << objects.size() * sizeof(SceneObject) << " bytes)" << std::endl
 				<< "Attr " << vertexAttrs.types.size() << " (" << vertexAttrs.totalSize << " bytes)" << std::endl
-				<< "Tri " << triangles.size() << " (" << triangles.size() * sizeof(FastTriangle) << " bytes)" << std::endl
+				<< "Tri " << trianglesFirst.size() << " (" << trianglesFirst.size() * sizeof(FastTriangleSecondHalf) << " bytes)" << std::endl
 				<< "Mat " << materials.size() << " (" << materials.size() * sizeof(Material) << " bytes)" << std::endl
 				<< "Tex " << textureHandleMap.size() << std::endl;
 		}
@@ -545,7 +546,8 @@ public:
 	void updateBuffers()
 	{
 		updateFlexibleBuffer(bufferHandles.vertex, vertexAttrs);
-		updateFlexibleBuffer(bufferHandles.triangles, triangles);
+		//Store only the second half of values inside triangle buffer. The first half is inside BVH
+		updateFlexibleBuffer(bufferHandles.triangles, trianglesSecond);
 		updateFlexibleBuffer(bufferHandles.material, materials);
 		updateFlexibleBuffer(bufferHandles.lights, lights);
 		updateFlexibleBuffer(bufferHandles.bvh, bvhBuilder.m_packedNodes);
@@ -557,7 +559,8 @@ public:
 	{
 		objects.clear();
 		vertexAttrs.clear();
-		triangles.clear();
+		trianglesFirst.clear();
+		trianglesSecond.clear();
 		materials.clear();
 		lights.clear();
 		sceneMaterialIndices.clear();
@@ -1007,7 +1010,7 @@ public:
 			}
 
 			auto vboCursorPos = vertexAttrs.totalSize / sizeof(float);
-			auto triCursorPos = triangles.size();
+			auto triCursorPos = trianglesFirst.size();
 			auto materialCursorPos = materials.size();
 			auto lightCursorPos = lights.size();
 
@@ -1024,6 +1027,8 @@ public:
 				float invVertNumber = 1.f / ((float)(v + 1.f));
 				averageNormal = glm::mix(GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v]), averageNormal, invVertNumber);
 			}
+			auto objectIndex = (uint32_t)objects.size();
+
 			// Construct triangle lookup table
 			for (std::size_t f = 0; f < mesh->mNumFaces; f++)
 			{
@@ -1047,8 +1052,9 @@ public:
 				aabbMin = glm::min(aabbMin, v1);
 				aabbMin = glm::min(aabbMin, v2);
 
-				auto fastTri = toFast(v0, v1, v2, indices);
-				triangles.push_back(fastTri);
+				auto fastTri = toFast(v0, v1, v2, indices, objectIndex);
+				trianglesFirst.push_back(fastTri.firstHalf());
+				trianglesSecond.push_back(fastTri.secondHalf());
 			}
 
 			uint32_t materialIndex;
@@ -1075,7 +1081,7 @@ public:
 						glm::normalize(averageNormal),
 						areaSize * areaSize,
 						lightMultiplier * glm::vec4(1),
-						(uint32_t)objects.size()
+						objectIndex
 						});
 				}
 				else
@@ -1087,7 +1093,7 @@ public:
 						glm::normalize(averageNormal),
 						areaSize * areaSize,
 						glm::vec4(thisEmission,1.f),
-						(uint32_t)objects.size()
+						objectIndex
 					};
 					lights.push_back(currentLight);
 				}

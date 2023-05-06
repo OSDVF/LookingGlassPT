@@ -173,7 +173,7 @@ namespace
 					return a.bboxCenter[majorAxis] < splitPos;
 				});
 
-			return midNode - nodes.begin();
+			return (GLuint)(midNode - nodes.begin());
 		};
 	}
 
@@ -244,9 +244,9 @@ namespace
 
 }
 
-void BVHBuilder::build(std::vector<FastTriangle> triangles)
+void BVHBuilder::build(std::vector<FastTriangleFirstHalf> trianglesFirst, std::vector<FastTriangleSecondHalf> trianglesSecond)
 {
-	auto primCount = triangles.size();
+	auto primCount = trianglesFirst.size();
 	m_nodes.clear();
 	m_nodes.reserve(primCount * 2 - 1);
 
@@ -254,19 +254,20 @@ void BVHBuilder::build(std::vector<FastTriangle> triangles)
 	tempNodes.reserve(primCount * 2 - 1);
 
 	// Build leaf nodes
-	for (GLuint triangleIndex = 0; triangleIndex < triangles.size(); ++triangleIndex)
+	for (GLuint triangleIndex = 0; triangleIndex < primCount; ++triangleIndex)
 	{
 		TempNode node;
 		Box3 box;
 		box.expandInit();
 
-		auto triangle = triangles[triangleIndex].toClassic();
+		auto fast = toFast(trianglesFirst[triangleIndex],trianglesSecond[triangleIndex]);
+		auto triangle = fast.toClassic();
 
 		box.expand(triangle[0]);
 		box.expand(triangle[1]);
 		box.expand(triangle[2]);
 
-		node.primArea = triangles[triangleIndex].calculateArea();
+		node.primArea = fast.calculateArea();
 
 		setBounds(node, box.m_min, box.m_max);
 
@@ -315,28 +316,25 @@ void BVHBuilder::build(std::vector<FastTriangle> triangles)
 
 		if (node.isLeaf())
 		{
-			struct BVHPrimitiveNode
-			{
-				glm::vec3 edge0;
-				GLuint prim;
-				glm::vec3 edge1;
+			struct TriangleHalf {
+				glm::vec3 v0;
+				GLuint triIndex;
+				glm::vec3 edgeA;
 				GLuint next;
 			};
 
-			BVHPrimitiveNode packedNode;
+			TriangleHalf triangleToPacked;
 
-			auto triangle = triangles[node.triangleIndex].toClassic();
-
-			packedNode.edge0 = triangle[1] - triangle[0];
-			packedNode.prim = node.triangleIndex;
-
-			packedNode.edge1 = triangle[2] - triangle[0];
-			packedNode.next = node.next;
+			auto triangleSource = trianglesFirst[node.triangleIndex];
+			triangleToPacked.v0 = triangleSource.v0;
+			triangleToPacked.triIndex = node.triangleIndex;
+			triangleToPacked.edgeA = triangleSource.edgeA;
+			triangleToPacked.next = node.next;
 
 			// There are 2 packed nodes per leaf node
 			BVHPackedNode data0, data1;
-			memcpy(&data0, &packedNode.edge0, sizeof(BVHPackedNode));
-			memcpy(&data1, &packedNode.edge1, sizeof(BVHPackedNode));
+			memcpy(&data0, &triangleToPacked.v0, sizeof(BVHPackedNode));
+			memcpy(&data1, &triangleToPacked.edgeA, sizeof(BVHPackedNode));
 
 			m_packedNodes.push_back(data0);
 			m_packedNodes.push_back(data1);
@@ -357,13 +355,5 @@ void BVHBuilder::build(std::vector<FastTriangle> triangles)
 			m_packedNodes.push_back(data0);
 			m_packedNodes.push_back(data1);
 		}
-	}
-
-	for (GLuint primId = 0; primId < primCount; ++primId)
-	{
-		glm::vec3 v0 = triangles[primId].toClassic()[0];
-		BVHPackedNode data;
-		memcpy(&data, &v0, sizeof(BVHPackedNode));
-		m_packedNodes.push_back(data);
 	}
 }

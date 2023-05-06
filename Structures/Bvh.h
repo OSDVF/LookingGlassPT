@@ -31,5 +31,5 @@ struct BVHBuilder
 {
 	std::vector<BVHNode> m_nodes;
 	std::vector<BVHPackedNode> m_packedNodes;
-	void build(std::vector<FastTriangle> triangles);
+	void build(std::vector<FastTriangleFirstHalf> trianglesFirst, std::vector<FastTriangleSecondHalf> trianglesSecond);
 };

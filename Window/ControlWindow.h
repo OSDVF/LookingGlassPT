@@ -115,7 +115,7 @@ public:
 					SceneAndViewSettings::pathTracing = false;
 				}
 				ImGui::SameLine();
-				ImGui::Text("Iteration: %d", SceneAndViewSettings::rayIteration);
+				ImGui::Text("Iteration: %lu", SceneAndViewSettings::rayIteration);
 			}
 			else
 			{
