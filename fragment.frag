@@ -12,6 +12,10 @@
 #define getRay getLookingGlassRay
 #endif
 
+#ifndef STACK_SIZE
+#define STACK_SIZE 20
+#endif
+
 #ifndef MAX_OBJECT_BUFFER
 #define MAX_OBJECT_BUFFER 64
 #endif
@@ -466,7 +470,9 @@ float xorTextureGradBox( in vec2 pos, in vec2 ddx, in vec2 ddy )
 void testVisibility(Ray ray, inout Hit closestHit)
 {
     // Traverse BVH
-    // Adapted from https://github.com/kayru/RayTracedShadows/blob/master/Source/Shaders/RayTracedShadows.comp
+    // Adapted from:
+    // https://github.com/kayru/RayTracedShadows/blob/master/Source/Shaders/RayTracedShadows.comp
+    // https://pbr-book.org/3ed-2018/Primitives_and_Intersection_Acceleration/Bounding_Volume_Hierarchies
     uint nodeIndex = 0;
 
     uint lastNode = bvh.length();
@@ -490,7 +496,7 @@ void testVisibility(Ray ray, inout Hit closestHit)
                 tri,
                 ray,
                 closestHit.rayT, outU, outV, normal))
-            //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - vec3(tri.edgeAx,tri.edgeAy,tri.edgeAz), vec3(tri.edgeBx,tri.edgeBy,tri.edgeBz) + tri.v0, outT, outV, outU))
+            //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - tri.edgeA, tri.edgeB + tri.v0, outT, outV, outU))
             {
                 ObjectDefinition obj = objectDefinitions[triSecond.objectIndex];
                 closestHit.vboStartIndex = obj.vboStartIndex;
@@ -500,16 +506,14 @@ void testVisibility(Ray ray, inout Hit closestHit)
                 closestHit.barycentric = vec2(outV, outU);
                 closestHit.indices = tri.attributeIndices;
                 closestHit.normal = normalize(normal);
-                return;
             }
         }
         else if (rayBoxIntersection(node.bboxMin.xyz, node.bboxMax.xyz, ray))
 		{
-			// If the ray intersects the bounding box
+			// If the ray intersects the bounding volume box
             ++nodeIndex;
             continue;
         }
-
         nodeIndex = floatBitsToUint(node.bboxMax.w);
     }
 }
