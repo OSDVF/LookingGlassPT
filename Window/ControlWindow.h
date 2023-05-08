@@ -357,4 +357,11 @@ public:
 			calibratedBy = "Error";
 		}
 	}
+
+	const std::deque<SDL_Event> emptyQueue;
+	void render() override
+	{
+		// When rendering not event-driven
+		renderOnEvent(emptyQueue);
+	}
 };

@@ -78,72 +78,72 @@ int main(int argc, const char** argv)
 	auto lastTime = SDL_GetPerformanceCounter();
 	std::thread renderThread([&windows, &eventQueues, &exit] {
 		Helpers::SetThreadName("Drawing Thread");
-	for (auto window : windows)
-	{
-		window->setupGL();
-	}
-	if (!checkExtensions())
-	{
-		return;
-	}
-	while (!exit)
-	{
-		for (int i = 0; i < windows.size(); i++)
+		for (auto window : windows)
 		{
-			auto& window = windows[i];
-			if (window != nullptr)
+			window->setupGL();
+		}
+		if (!checkExtensions())
+		{
+			return;
+		}
+		while (!exit)
+		{
+			for (int i = 0; i < windows.size(); i++)
 			{
-				if (!window->hidden)
+				auto& window = windows[i];
+				if (window != nullptr)
 				{
-					auto& events = eventQueues[i];
-					// There is not any mutex because it is a non-critical critical section :)
-					if (window->destroyMe)
+					if (!window->hidden)
 					{
-						events.clear();
-						destroyWindow(window);
-						window = nullptr;
-					}
-					else
-					{
-						if (window->eventDriven)
+						auto& events = eventQueues[i];
+						// There is not any mutex because it is a non-critical critical section :)
+						if (window->destroyMe)
 						{
-							if (events.size())
-							{
-								// Process events
-								window->setContext();
-								window->beginFrame();
-								processEventsOnRender(events, window);
-								window->flushRender();
-
-								// Render once more with empty event to update the UI
-								window->setContext();
-								window->beginFrame();
-								window->renderOnEvent(events);
-								window->flushRender();
-							}
-							else if (wholeAppPowerSave)
-							{
-								std::unique_lock lk(powerSaveMut);
-								renderWait.wait(lk);
-							}
+							events.clear();
+							destroyWindow(window);
+							window = nullptr;
 						}
 						else
 						{
-							window->setContext();
-							while (events.size() > 0)
+							if (window->eventDriven && !SceneAndViewSettings::overridePowerSave)
 							{
-								window->processImGuiEvent(events.front());
-								events.pop_front();
+								if (events.size())
+								{
+									// Process events
+									window->setContext();
+									window->beginFrame();
+									processEventsOnRender(events, window);
+									window->flushRender();
+
+									// Render once more with empty event to update the UI
+									window->setContext();
+									window->beginFrame();
+									window->renderOnEvent(events);
+									window->flushRender();
+								}
+								else if (wholeAppPowerSave)
+								{
+									std::unique_lock lk(powerSaveMut);
+									renderWait.wait(lk);
+								}
 							}
-							window->beginFrame();
-							window->render();
-							window->flushRender();
+							else
+							{
+								window->setContext();
+								while (events.size() > 0)
+								{
+									window->processImGuiEvent(events.front());
+									events.pop_front();
+								}
+								window->beginFrame();
+								window->render();
+								window->flushRender();
+							}
 						}
 					}
 				}
 			}
 		}
-	}
 		}
 	);
 

@@ -410,6 +410,7 @@ public:
 		else
 		{
 			swapShaders(fShader, fFlatShader);
+			glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
 		}
 	}
 
@@ -570,7 +571,7 @@ public:
 
 	bool workOnEvent(SDL_Event event, float deltaTime) override
 	{
-		if (interactive)
+		if (SceneAndViewSettings::interactive)
 		{
 			person.Update(deltaTime, true, event);
 		}
@@ -580,7 +581,7 @@ public:
 			switch (event.key.keysym.sym)
 			{
 			case SDL_KeyCode::SDLK_i:
-				interactive = !interactive;
+				SceneAndViewSettings::interactive = !SceneAndViewSettings::interactive;
 				SDL_CaptureMouse(SDL_bool(interactive));
 				SDL_SetRelativeMouseMode(SDL_bool(interactive));
 				break;
@@ -602,7 +603,7 @@ public:
 				}
 				break;
 			case SDLK_p:
-				eventDriven = !eventDriven;
+				this->eventDriven = !this->eventDriven;
 				break;
 			case SDL_KeyCode::SDLK_r:
 				SceneAndViewSettings::recompileFShaders = true;

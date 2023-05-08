@@ -4,7 +4,7 @@
 #include "../FirstPersonController.h"
 #include "../Calibration/Calibration.h"
 
-inline bool wasInteractiveBefore;
+inline bool wasOverridePowerSave;
 
 namespace SceneAndViewSettings {
 	inline Calibration calibration;
@@ -41,16 +41,25 @@ namespace SceneAndViewSettings {
 	inline bool fpsWindow = false;
 	inline bool backfaceCulling = true;
 
+	// Turn off event-driven rendering so all windows get updated every frame
+	inline bool overridePowerSave = false;
+
 	inline void stopPathTracing()
 	{
-		SceneAndViewSettings::interactive = wasInteractiveBefore;
-		SceneAndViewSettings::pathTracing = false;
+		if (SceneAndViewSettings::pathTracing)
+		{
+			overridePowerSave = wasOverridePowerSave;
+			SceneAndViewSettings::pathTracing = false;
+		}
 	}
 
 	inline void startPathTracing()
 	{
-		wasInteractiveBefore = SceneAndViewSettings::interactive;
-		SceneAndViewSettings::interactive = false;
-		SceneAndViewSettings::pathTracing = true;
+		if (!SceneAndViewSettings::pathTracing)
+		{
+			wasOverridePowerSave = overridePowerSave;
+			overridePowerSave = true;
+			SceneAndViewSettings::pathTracing = true;
+		}
 	}
 };
