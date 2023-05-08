@@ -112,7 +112,7 @@ public:
 			{
 				if (ImGui::Button("Pause Path Tracing"))
 				{
-					SceneAndViewSettings::pathTracing = false;
+					SceneAndViewSettings::stopPathTracing();
 				}
 				ImGui::SameLine();
 				ImGui::Text("Iteration: %lu", SceneAndViewSettings::rayIteration);
@@ -127,8 +127,7 @@ public:
 				ImGui::InputFloat("Ray Offset", &SceneAndViewSettings::rayOffset, 1e-5, 0, "%g");
 				if (ImGui::Button("Start/Resume Path Tracing"))
 				{
-					SceneAndViewSettings::pathTracing = true;
-					SceneAndViewSettings::interactive = false;
+					SceneAndViewSettings::startPathTracing();
 				}
 				if (SceneAndViewSettings::rayIteration > 0)
 				{

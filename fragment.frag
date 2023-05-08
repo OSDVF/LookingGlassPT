@@ -20,6 +20,15 @@
 #define MAX_OBJECT_BUFFER 64
 #endif
 
+#ifndef DEBUG_BVH_LEVEL
+#define DEBUG_BVH_LEVEL_0 vec3(1., 0., 1.)
+#define DEBUG_BVH_LEVEL_1 vec3(1., 1., 0.)
+#define DEBUG_BVH_LEVEL_2 vec3(0., 0., 1.)
+#define DEBUG_BVH_LEVEL_3 vec3(0., 1., 0.)
+#define DEBUG_BVH_LEVEL_4 vec3(1., 0., 0.)
+#define DEBUG_BVH_LEVEL_5 vec3(0., 1., 1.)
+#endif
+
 out vec4 OutColor;
 in vec2 vNDCpos;
 
@@ -467,7 +476,7 @@ float xorTextureGradBox( in vec2 pos, in vec2 ddx, in vec2 ddy )
     return xor;
 }
 
-void testVisibility(Ray ray, inout Hit closestHit)
+void findClosestHit(Ray ray, inout Hit closestHit)
 {
     // Traverse BVH
     // Adapted from:
@@ -518,11 +527,61 @@ void testVisibility(Ray ray, inout Hit closestHit)
     }
 }
 
+
+// For shadows
+void findAnyHit(Ray ray, inout Hit anyHit)
+{
+    uint nodeIndex = 0;
+
+    uint lastNode = bvh.length();
+     
+	while(nodeIndex < lastNode)
+	{
+        BVHNode node;
+        node.bboxMin = bvh[nodeIndex * 2];
+        node.bboxMax = bvh[nodeIndex * 2 + 1];
+
+        uint primitiveIndex = floatBitsToUint(node.bboxMin.w);
+
+        bool isLeaf = primitiveIndex != 0xFFFFFFFF;
+        if(isLeaf)
+        {
+            TriangleSecondHalf triSecond = trianglesSecond[primitiveIndex];
+            Triangle tri = Triangle(node.bboxMin.xyz,node.bboxMax.xyz, triSecond.edgeB, triSecond.attributeIndices);
+            float outT, outU, outV;
+            vec3 normal;
+            if(embreeIntersect(
+                tri,
+                ray,
+                anyHit.rayT, outU, outV, normal))
+            //if(rayTriangleIntersect(ray.origin, ray.direction, tri.v0, tri.v0 - tri.edgeA, tri.edgeB + tri.v0, outT, outV, outU))
+            {
+                ObjectDefinition obj = objectDefinitions[triSecond.objectIndex];
+                anyHit.vboStartIndex = obj.vboStartIndex;
+                anyHit.attrs = obj.vertexAttrs;
+                anyHit.material = obj.material;
+                anyHit.totalAttrSize = obj.totalAttrsSize;
+                anyHit.barycentric = vec2(outV, outU);
+                anyHit.indices = tri.attributeIndices;
+                anyHit.normal = normalize(normal);
+                return;
+            }
+        }
+        else if (rayBoxIntersection(node.bboxMin.xyz, node.bboxMax.xyz, ray))
+		{
+			// If the ray intersects the bounding volume box
+            ++nodeIndex;
+            continue;
+        }
+        nodeIndex = floatBitsToUint(node.bboxMax.w);
+    }
+}
+
 bool resolveRay(Ray ray, float far, out vec3 albedo, out vec3 normal, out vec3 emission, out float depth)
 {
     Hit closestHit;
     closestHit.rayT = far;
-    testVisibility(ray, closestHit);
+    findClosestHit(ray, closestHit);
     if(closestHit.rayT != far)
     {
         // Interpolate other triangle attributes by barycentric coordinates
@@ -662,10 +721,10 @@ vec3 rayTraceSubPixel(vec2 ndcCoord) {
                         // Test light visibility
                         float far = length(dirToLight);
                         Ray shadowRay = Ray(position, dirToLight / far);
-                        Hit closestHit;
-                        closestHit.rayT = far;//constant far plane 
-                        testVisibility(shadowRay, closestHit);
-                        if(closestHit.rayT == far) {
+                        Hit anyHit;
+                        anyHit.rayT = far;//constant far plane 
+                        findAnyHit(shadowRay, anyHit);
+                        if(anyHit.rayT == far) {
 					        vec3 Le = light.color.xyz;
 					        contrib += throughput * (Le * w * brdf) / light_pdf;
 				        }

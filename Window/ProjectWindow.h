@@ -359,7 +359,7 @@ public:
 			glUniform1f(shaderInputs.uRayOffset, rayOffset);
 			if (rayIteration > maxIterations)
 			{
-				SceneAndViewSettings::pathTracing = false;
+				SceneAndViewSettings::stopPathTracing();
 			}
 		}
 		else
@@ -488,6 +488,7 @@ public:
 				<< "Obj " << objects.size() << " (" << objects.size() * sizeof(SceneObject) << " bytes)" << std::endl
 				<< "Attr " << vertexAttrs.types.size() << " (" << vertexAttrs.totalSize << " bytes)" << std::endl
 				<< "Tri " << trianglesFirst.size() << " (" << trianglesFirst.size() * sizeof(FastTriangleSecondHalf) << " bytes)" << std::endl
+				<< "BVH " << bvhBuilder.m_packedNodes.size() << " (" << bvhBuilder.m_packedNodes.size() * sizeof(BVHPackedNode) << " bytes)" << std::endl
 				<< "Mat " << materials.size() << " (" << materials.size() * sizeof(Material) << " bytes)" << std::endl
 				<< "Tex " << textureHandleMap.size() << std::endl;
 		}

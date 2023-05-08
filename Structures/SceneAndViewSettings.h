@@ -4,6 +4,8 @@
 #include "../FirstPersonController.h"
 #include "../Calibration/Calibration.h"
 
+inline bool wasInteractiveBefore;
+
 namespace SceneAndViewSettings {
 	inline Calibration calibration;
 	inline float fov = 60;
@@ -38,4 +40,17 @@ namespace SceneAndViewSettings {
 	inline bool subpixelOnePass = false;
 	inline bool fpsWindow = false;
 	inline bool backfaceCulling = true;
+
+	inline void stopPathTracing()
+	{
+		SceneAndViewSettings::interactive = wasInteractiveBefore;
+		SceneAndViewSettings::pathTracing = false;
+	}
+
+	inline void startPathTracing()
+	{
+		wasInteractiveBefore = SceneAndViewSettings::interactive;
+		SceneAndViewSettings::interactive = false;
+		SceneAndViewSettings::pathTracing = true;
+	}
 };

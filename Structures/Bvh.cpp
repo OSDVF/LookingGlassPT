@@ -307,7 +307,7 @@ void BVHBuilder::build(std::vector<FastTriangleFirstHalf> trianglesFirst, std::v
 	//
 	// Node packing
 	//
-
+	m_packedNodes.clear();
 	m_packedNodes.reserve(m_nodes.size() + primCount);
 
 	for (GLuint i = 0; i < (GLuint)tempNodes.size(); ++i)
