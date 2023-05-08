@@ -28,11 +28,13 @@ std::condition_variable renderWait;
 bool wholeAppPowerSave = false;
 int main(int argc, const char** argv)
 {
+	float performanceFrequency = SDL_GetPerformanceFrequency();
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_EVENTS) < 0)
 	{
 		std::cerr << "SDL Init failed" << std::endl;
 		return 1;
 	}
+
 
 	/* Request opengl 4.2 context.
 	 * SDL doesn't have the ability to choose which profile at this time of writing,
@@ -75,7 +77,7 @@ int main(int argc, const char** argv)
 	std::array<std::deque<SDL_Event>, windows.size()> eventQueues;
 
 	bool exit = false;
-	auto lastTime = SDL_GetPerformanceCounter();
+	float lastTime = SDL_GetPerformanceCounter();
 	std::thread renderThread([&windows, &eventQueues, &exit] {
 		Helpers::SetThreadName("Drawing Thread");
 		for (auto window : windows)
@@ -151,7 +153,6 @@ int main(int argc, const char** argv)
 	Uint32 focusedWindow = -1;
 	while (!exit)
 	{
-
 		SDL_Event event;
 		bool tempPowerSaveResult = true;
 		for (auto& window : windows)
@@ -173,8 +174,8 @@ int main(int argc, const char** argv)
 			hasEvent = SDL_PollEvent(&event);
 		}
 
-		auto now = SDL_GetPerformanceCounter();
-		float deltaTime = std::min(1000 * ((now - lastTime) / (float)SDL_GetPerformanceFrequency()), 1.f);
+		float now = SDL_GetPerformanceCounter();
+		float deltaTime = std::clamp((now - lastTime) / performanceFrequency, 0.001f, 1.f);
 		lastTime = now;
 		if (hasEvent)
 		{
@@ -218,11 +219,11 @@ int main(int argc, const char** argv)
 						try
 						{
 							std::unique_lock lck(queMut);
-							eventQueues[i].push_front(event);
+							eventQueues[i].push_back(event);
 						}
 						catch (std::exception)
 						{
-							//Do nothing, probably a race condition occured
+							//Do nothing, probably a race condition occured when accessing event queue
 						}
 						exit = exit || window->workOnEvent(event, deltaTime);
 					}

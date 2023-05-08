@@ -54,6 +54,7 @@ set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
 find_package(tiny-process-library CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE tiny-process-library::tiny-process-library)
 
+add_definitions(-DAI_DOUBLE_PRECISION -DASSIMP_DOUBLE_PRECISION)
 find_package(assimp CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE assimp::assimp)
 

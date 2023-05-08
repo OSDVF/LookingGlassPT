@@ -8,8 +8,8 @@ public:
 	// Virtual camera which is used in the raytracer
 	MouseCamera Camera;
 	bool CanJump = true;
-	float WalkSpeed = 0.002f;
-	float RunSpeed = 0.01f;
+	float WalkSpeed = .2f;
+	float RunSpeed = 1.f;
 	float AirModifier = 1.5f;
 	float Friction = 0.86f;
 	float JumpForce = 2.f;

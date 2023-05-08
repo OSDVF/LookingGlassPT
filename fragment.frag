@@ -274,11 +274,13 @@ void getLookingGlassRay(vec2 pix, out Ray ray) {
 }
 
 void getFlatScreenRay(vec2 pix, out Ray ray){
-  vec4 dir = inverse(uProj * uView)*vec4(pix,1,1);
-  dir.xyz/=dir.w;
-  vec3 pos = vec3(inverse(uView)*vec4(0,0,0,1));
+    mat4 invView = inverse(uView);
+    vec4 dir = inverse(uProj) * vec4(pix,1,1);
+    dir.w = 0;
+    dir = invView * dir;
+    vec3 pos = vec3(inverse(uView) * vec4(0,0,0,1));
 
-  ray = Ray(pos, normalize(dir.xyz));
+    ray = Ray(pos, normalize(dir.xyz));
 }
 
 bool rayBoxIntersection(vec3 minPos, vec3 maxPos, Ray ray)

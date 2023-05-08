@@ -467,8 +467,10 @@ public:
 					glm::radians(scene.rotationDeg.x), glm::radians(scene.rotationDeg.y), glm::radians(scene.rotationDeg.z)
 				), scene.position));
 
-
+				auto before = std::chrono::system_clock::now();
 				bvhBuilder.build(trianglesFirst, trianglesSecond);
+				auto after = std::chrono::system_clock::now();
+				std::cout << "BVH Construction took " << std::chrono::duration<float, std::milli>(after - before).count() << " ms";
 
 				if (!textureErrors.empty())
 				{
@@ -933,7 +935,7 @@ public:
 		}
 		else if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_EMISSIVE, &emission))
 		{
-			newMat.setEmissive(GlHelpers::aiToGlm(emission * lightMultiplier));
+			newMat.setEmissive(GlHelpers::aiToGlm(emission * double(lightMultiplier)));
 		}
 		materials.push_back(newMat);
 	}
@@ -1047,13 +1049,6 @@ public:
 				glm::vec3 v1 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.y]);
 				glm::vec3 v2 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.z]);
 
-				aabbMax = glm::max(aabbMax, v0);
-				aabbMax = glm::max(aabbMax, v1);
-				aabbMax = glm::max(aabbMax, v2);
-				aabbMin = glm::min(aabbMin, v0);
-				aabbMin = glm::min(aabbMin, v1);
-				aabbMin = glm::min(aabbMin, v2);
-
 				auto fastTri = toFast(v0, v1, v2, indices, objectIndex);
 				trianglesFirst.push_back(fastTri.firstHalf());
 				trianglesSecond.push_back(fastTri.secondHalf());
@@ -1115,7 +1110,7 @@ public:
 		// draw all children
 		for (auto n = (decltype(nd->mNumChildren))0; n < nd->mNumChildren; ++n)
 		{
-			SubmitScene(sc, nd->mChildren[n], parentTransform);
+			SubmitScene(sc, nd->mChildren[n], transMat);
 		}
 	}
 };

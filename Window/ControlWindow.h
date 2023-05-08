@@ -146,6 +146,8 @@ public:
 		if (SceneAndViewSettings::GlobalScreenType == SceneAndViewSettings::ScreenType::LookingGlass)
 		{
 			ImGui::TreePush("LG specific");
+			ImGui::SliderFloat("View Cone", &SceneAndViewSettings::viewCone, 10.f, 80.f);
+			ImGui::SliderFloat("Focus Distance", &SceneAndViewSettings::focusDistance, 0.f, 40.f);
 			ImGui::Text("Calibrated by: %s", calibratedBy.c_str());
 			if (ImGui::Button("Retry Calibration"))
 			{
@@ -162,14 +164,18 @@ public:
 		{
 			SceneAndViewSettings::applyScreenType = true;
 		}
-		if (ImGui::TreeNode("Camera"))
+		if (ImGui::TreeNode("Camera and movement"))
 		{
+			ImGui::SliderFloat("Sensitivity", &SceneAndViewSettings::person.Camera.Sensitivity, 1, 500);
+			if (ImGui::SliderFloat("Speed", &SceneAndViewSettings::person.WalkSpeed, 0.01, 5))
+			{
+				SceneAndViewSettings::person.RunSpeed = SceneAndViewSettings::person.WalkSpeed * 5;
+			}
 			bool cameraEdited = ImGui::SliderFloat("FOV", &SceneAndViewSettings::fov, 30.f, 100.f);
 			cameraEdited = ImGui::SliderFloat("Near Plane", &SceneAndViewSettings::nearPlane, 0.01f, 1) || cameraEdited;
 			cameraEdited = ImGui::SliderFloat("Far Plane", &SceneAndViewSettings::farPlane, SceneAndViewSettings::nearPlane, 1000) || cameraEdited;
-			ImGui::SliderFloat("Sensitivity", &SceneAndViewSettings::person.Camera.Sensitivity, 0.01, 1);
-			ImGui::InputFloat3("P", glm::value_ptr(SceneAndViewSettings::person.Camera._position));
-			ImGui::InputFloat3("R", glm::value_ptr(SceneAndViewSettings::person.Camera._rotation));
+			ImGui::InputFloat3("Pos", glm::value_ptr(SceneAndViewSettings::person.Camera._position));
+			ImGui::InputFloat3("Rot", glm::value_ptr(SceneAndViewSettings::person.Camera._rotation));
 			ImGui::TreePop();
 
 			if (cameraEdited)
@@ -203,8 +209,6 @@ public:
 				}
 			}
 		}
-		ImGui::SliderFloat("View Cone", &SceneAndViewSettings::viewCone, 10.f, 80.f);
-		ImGui::SliderFloat("Focus Distance", &SceneAndViewSettings::focusDistance, 0.f, 40.f);
 		if (ImGui::TreeNodeEx("Scene", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			if (SceneAndViewSettings::scene.path.empty())
@@ -259,14 +263,16 @@ public:
 			}
 			else
 			{
+				double min = 0.00001;
+				double max = 100000;
 				if (uniformScale)
 				{
-					ImGui::DragFloat("Scale##Scene", &SceneAndViewSettings::scene.scale.x, 100.f, 0.00001, 100000, "%f", ImGuiSliderFlags_Logarithmic);
+					ImGui::DragScalar("Scale##Scene", ImGuiDataType_Double, &SceneAndViewSettings::scene.scale.x, 100.f, &min, &max, "%lf", ImGuiSliderFlags_Logarithmic);
 					SceneAndViewSettings::scene.scale.y = SceneAndViewSettings::scene.scale.z = SceneAndViewSettings::scene.scale.x;
 				}
 				else
 				{
-					ImGui::DragFloat3("Scale##Scene", &SceneAndViewSettings::scene.scale.x, 100.f, 0.00001, 100000, "%f", ImGuiSliderFlags_Logarithmic);
+					ImGui::DragScalarN("Scale##Scene", ImGuiDataType_Double, &SceneAndViewSettings::scene.scale.x, 3, 100.f, &min, &max, "%f", ImGuiSliderFlags_Logarithmic);
 				}
 			}
 			ImGui::TreePush("Details");
@@ -274,8 +280,12 @@ public:
 			ImGui::SameLine();
 			ImGui::Checkbox("Uniform", &uniformScale);
 			ImGui::TreePop();
-			ImGui::DragFloat3("Position##Scene", &SceneAndViewSettings::scene.position.x, .1f, -10000, 10000);
-			ImGui::DragFloat3("Rotation (deg)", &SceneAndViewSettings::scene.rotationDeg.x, .1f, 0.f, 360.f - FLT_EPSILON);
+			double min = -10000;
+			double max = -10000;
+			ImGui::DragScalarN("Position##Scene", ImGuiDataType_Double, &SceneAndViewSettings::scene.position.x, 3, .1f, &min, &max);
+			min = 0;
+			max = 360 - DBL_EPSILON;
+			ImGui::DragScalarN("Rotation (deg)", ImGuiDataType_Double, &SceneAndViewSettings::scene.rotationDeg.x, 3, .1f, &min, &max);
 			ImGui::SliderFloat("Light Multiplier", &SceneAndViewSettings::lightMultiplier, 0.1, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic);
 			if (ImGui::Checkbox("Backface Culling", &SceneAndViewSettings::backfaceCulling))
 			{

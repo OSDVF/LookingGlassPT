@@ -32,7 +32,7 @@ public:
 		: MouseCamera(glm::vec3(0.0f, 1.5f, 1.0f), glm::vec3(0.f))
 	{
 	}
-	float Sensitivity = 1.0f;
+	float Sensitivity = 100.0f;
 	float Aspect = 1.0f;
 
 	virtual ~MouseCamera() = default;
