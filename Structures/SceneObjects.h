@@ -180,19 +180,15 @@ struct SceneObject {
 	uint32_t attrBufferPointer;
 	uint32_t vertexAttrsMask;
 	uint32_t totalAttrSize;
-	glm::vec3 aabbMin;
-	glm::vec3 aabbMax;
 
 	SceneObject(
 		uint32_t material,
 		uint32_t vboStartIndex,
 		uint32_t indexIndex,
 		uint32_t triNumber,
-		bool colors, bool normals, bool uvs, glm::vec3 aabbMin, glm::vec3 aabbMax) :
+		bool colors, bool normals, bool uvs) :
 		material(material),
-		attrBufferPointer(vboStartIndex),
-		aabbMax(aabbMax),
-		aabbMin(aabbMin)
+		attrBufferPointer(vboStartIndex)
 	{
 		totalAttrSize = 0;
 		vertexAttrsMask = 0;

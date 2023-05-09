@@ -46,12 +46,6 @@ struct ObjectDefinition {
     uint vboStartIndex;
     uint vertexAttrs;
     uint totalAttrsSize;
-    float aabbMinX;
-    float aabbMinY;
-    float aabbMinZ;
-    float aabbMaxX;
-    float aabbMaxY;
-    float aabbMaxZ;
 };
 
 struct Light {
@@ -278,7 +272,7 @@ void getFlatScreenRay(vec2 pix, out Ray ray){
     vec4 dir = inverse(uProj) * vec4(pix,1,1);
     dir.w = 0;
     dir = invView * dir;
-    vec3 pos = vec3(inverse(uView) * vec4(0,0,0,1));
+    vec3 pos = vec3(invView * vec4(0,0,0,1));
 
     ray = Ray(pos, normalize(dir.xyz));
 }

@@ -935,7 +935,7 @@ public:
 		}
 		else if (AI_SUCCESS == aiGetMaterialColor(mtl, AI_MATKEY_COLOR_EMISSIVE, &emission))
 		{
-			newMat.setEmissive(GlHelpers::aiToGlm(emission * double(lightMultiplier)));
+			newMat.setEmissive(GlHelpers::aiToGlm(emission) * lightMultiplier);
 		}
 		materials.push_back(newMat);
 	}
@@ -964,12 +964,12 @@ public:
 		if (mesh->HasVertexColors(0))// If the mesh has vertex colors
 		{
 			auto col = mesh->mColors[0][index];
-			vertexAttrs.push(col);
+			vertexAttrs.push(GlHelpers::aiToGlm(col));
 		}
 		if (mesh->mNormals != nullptr)
 		{
 			auto norm = normalTransMat * mesh->mNormals[index];
-			vertexAttrs.push(norm);
+			vertexAttrs.push(GlHelpers::aiToGlm(norm));
 		}
 		for (unsigned int t = 0; t < uvNum; t++)
 		{
@@ -977,8 +977,8 @@ public:
 			//	t < mesh->mNumUVComponents[0]; t++)
 			{
 				auto tCor = mesh->mTextureCoords[t][index];
-				vertexAttrs.push(tCor.x);
-				vertexAttrs.push(tCor.y);
+				vertexAttrs.push(float(tCor.x));
+				vertexAttrs.push(float(tCor.y));
 			}
 		}
 	}
@@ -1049,6 +1049,13 @@ public:
 				glm::vec3 v1 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.y]);
 				glm::vec3 v2 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.z]);
 
+				aabbMax = glm::max(aabbMax, v0);
+				aabbMax = glm::max(aabbMax, v1);
+				aabbMax = glm::max(aabbMax, v2);
+				aabbMin = glm::min(aabbMin, v0);
+				aabbMin = glm::min(aabbMin, v1);
+				aabbMin = glm::min(aabbMin, v2);
+
 				auto fastTri = toFast(v0, v1, v2, indices, objectIndex);
 				trianglesFirst.push_back(fastTri.firstHalf());
 				trianglesSecond.push_back(fastTri.secondHalf());
@@ -1097,7 +1104,7 @@ public:
 			}
 			objects.push_back(SceneObject(
 				materialIndex, vboCursorPos, triCursorPos, mesh->mNumFaces,
-				mesh->HasVertexColors(0), mesh->HasNormals(), mesh->HasTextureCoords(0), aabbMin, aabbMax
+				mesh->HasVertexColors(0), mesh->HasNormals(), mesh->HasTextureCoords(0)
 			));
 			std::cout << "is obj number " << objects.size() - 1 << " begins at " << triCursorPos << " with material " << materialIndex << std::endl;
 			aiVector3D pos;
