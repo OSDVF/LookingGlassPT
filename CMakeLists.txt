@@ -24,6 +24,7 @@ file(GLOB all_SRCS
 
 # Add source to this project's executable.
 add_executable (LookingGlassPT ${all_SRCS})
+option(ASSIMP_DOUBLE_PRECISION "" ON)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET LookingGlassPT PROPERTY CXX_STANDARD 20)
@@ -54,7 +55,6 @@ set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
 find_package(tiny-process-library CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE tiny-process-library::tiny-process-library)
 
-#add_definitions(-DAI_DOUBLE_PRECISION -DASSIMP_DOUBLE_PRECISION)
 find_package(assimp CONFIG REQUIRED)
 target_link_libraries(LookingGlassPT PRIVATE assimp::assimp)
 

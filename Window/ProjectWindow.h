@@ -544,7 +544,7 @@ public:
 		{
 			std::cerr << "Bad shader memory layout. Calibration block is " << blockSize << " bytes, but should be " << sizeof(calibrationForShader) << std::endl;
 		}
-		glBufferData(GL_UNIFORM_BUFFER, blockSize, (const void*)&calibrationForShader, GL_STATIC_READ);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(calibrationForShader), (const void*)&calibrationForShader, GL_STATIC_READ);
 	}
 
 	void updateBuffers()
@@ -729,7 +729,7 @@ public:
 			throw std::runtime_error(fmt::format("Could not open scene file {}: \n{}", pFile.string(), importer.GetErrorString()));
 		}
 
-		gScene = importer.ReadFile(pFile.string(), aiProcessPreset_TargetRealtime_Quality | aiPostProcessSteps::aiProcess_FlipUVs | aiPostProcessSteps::aiProcess_FixInfacingNormals);
+		gScene = importer.ReadFile(pFile.string(), aiProcessPreset_TargetRealtime_Quality | aiPostProcessSteps::aiProcess_FlipUVs | aiPostProcessSteps::aiProcess_FixInfacingNormals | aiPostProcessSteps::aiProcess_Triangulate);
 
 		// If the import failed, report it
 		if (!gScene)
@@ -982,13 +982,13 @@ public:
 		}
 	}
 
-	void SubmitScene(const struct aiScene* sc, const struct aiNode* nd = nullptr, aiMatrix4x4 parentTransform = aiMatrix4x4())
+	void SubmitScene(const struct aiScene* sc, const struct aiNode* nd = nullptr, aiMatrix4x4 transformationMatrix = aiMatrix4x4())
 	{
 		if (nd == nullptr)
 		{
 			nd = sc->mRootNode;
 		}
-		aiMatrix4x4 transMat = parentTransform * nd->mTransformation;
+		transformationMatrix = transformationMatrix * nd->mTransformation;
 
 		// draw all meshes assigned to this node
 		for (auto n = (decltype(nd->mNumMeshes))0; n < nd->mNumMeshes; ++n)
@@ -1018,15 +1018,15 @@ public:
 			auto lightCursorPos = lights.size();
 
 			std::size_t v = 0;
-			auto normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
-			pushAttributes(mesh, v, transMat, normalTransMat);
+			auto normalTransMat = aiMatrix3x3(transformationMatrix).Inverse().Transpose();
+			pushAttributes(mesh, v, transformationMatrix, normalTransMat);
 			if (mesh->mNormals != nullptr)
 			{
 				averageNormal = GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v]);
 			}
 			for (v = 1; v < mesh->mNumVertices; v++)
 			{
-				pushAttributes(mesh, v, transMat, normalTransMat);
+				pushAttributes(mesh, v, transformationMatrix, normalTransMat);
 				float invVertNumber = 1.f / ((float)(v + 1.f));
 				averageNormal = glm::mix(GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v]), averageNormal, invVertNumber);
 			}
@@ -1044,9 +1044,9 @@ public:
 
 				// Apply transformation matrix and construct a trinagle
 				glm::uvec3 indices = { face->mIndices[0], face->mIndices[1], face->mIndices[2] };
-				glm::vec3 v0 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.x]);
-				glm::vec3 v1 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.y]);
-				glm::vec3 v2 = GlHelpers::aiToGlm(transMat * mesh->mVertices[indices.z]);
+				glm::vec3 v0 = GlHelpers::aiToGlm(transformationMatrix * mesh->mVertices[indices.x]);
+				glm::vec3 v1 = GlHelpers::aiToGlm(transformationMatrix * mesh->mVertices[indices.y]);
+				glm::vec3 v2 = GlHelpers::aiToGlm(transformationMatrix * mesh->mVertices[indices.z]);
 
 				aabbMax = glm::max(aabbMax, v0);
 				aabbMax = glm::max(aabbMax, v1);
@@ -1108,15 +1108,15 @@ public:
 			std::cout << "is obj number " << objects.size() - 1 << " begins at " << triCursorPos << " with material " << materialIndex << std::endl;
 			aiVector3D pos;
 			aiQuaternion rot;
-			transMat.DecomposeNoScaling(rot, pos);
-			aiVector3D sca = { transMat[0][0] ,transMat[1][1],transMat[2][2] };
+			transformationMatrix.DecomposeNoScaling(rot, pos);
+			aiVector3D sca = { transformationMatrix[0][0] ,transformationMatrix[1][1],transformationMatrix[2][2] };
 			std::cout << "pos " << GlHelpers::aiToGlm(pos) << " rot " << rot.x << "," << rot.y << "," << rot.z << "," << rot.w << " sca " << GlHelpers::aiToGlm(sca) << std::endl;
 		}
 
 		// draw all children
 		for (auto n = (decltype(nd->mNumChildren))0; n < nd->mNumChildren; ++n)
 		{
-			SubmitScene(sc, nd->mChildren[n], transMat);
+			SubmitScene(sc, nd->mChildren[n], transformationMatrix);
 		}
 	}
 };

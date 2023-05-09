@@ -44,6 +44,10 @@
                 {
                     "name": "ASAN_SYMBOLIZER_PATH",
                     "value": "/usr/bin/llvm-symbolizer"
+                },
+                {
+                    "name": "LSAN_OPTIONS",
+                    "value": "verbosity=1:log_threads=1"
                 }
             ],
             "externalConsole": false,
