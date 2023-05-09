@@ -218,7 +218,7 @@ public:
 	const std::type_info& type;
 	template <typename T>
 	anySized(T&& item) :
-		size{ sizeof(std::decay_t<T>) },
+		size(sizeof(T)),
 		type(typeid(T))
 	{
 		data = new std::byte[size];

@@ -36,6 +36,14 @@
                 {
                     "name": "__GL_SHADER_DISK_CACHE",
                     "value": "1"
+                },
+                {
+                    "name": "ASAN_OPTIONS",
+                    "value": "symbolize=1"
+                },
+                {
+                    "name": "ASAN_SYMBOLIZER_PATH",
+                    "value": "/usr/bin/llvm-symbolizer"
                 }
             ],
             "externalConsole": false,

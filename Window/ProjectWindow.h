@@ -957,10 +957,9 @@ public:
 		return uvNum;
 	}
 
-	void pushAttributes(const aiMesh* mesh, std::size_t& index, const aiMatrix4x4& transMat)
+	void pushAttributes(const aiMesh* mesh, std::size_t& index, const aiMatrix4x4& transMat, const aiMatrix3x3& normalTransMat)
 	{
 		auto uvNum = getUvNum(mesh);
-		auto& normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
 		if (mesh->HasVertexColors(0))// If the mesh has vertex colors
 		{
 			auto col = mesh->mColors[0][index];
@@ -1019,15 +1018,15 @@ public:
 			auto lightCursorPos = lights.size();
 
 			std::size_t v = 0;
-			pushAttributes(mesh, v, transMat);
-			auto& normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
+			auto normalTransMat = aiMatrix3x3(transMat).Inverse().Transpose();
+			pushAttributes(mesh, v, transMat, normalTransMat);
 			if (mesh->mNormals != nullptr)
 			{
 				averageNormal = GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v]);
 			}
 			for (v = 1; v < mesh->mNumVertices; v++)
 			{
-				pushAttributes(mesh, v, transMat);
+				pushAttributes(mesh, v, transMat, normalTransMat);
 				float invVertNumber = 1.f / ((float)(v + 1.f));
 				averageNormal = glm::mix(GlHelpers::aiToGlm(normalTransMat * mesh->mNormals[v]), averageNormal, invVertNumber);
 			}
