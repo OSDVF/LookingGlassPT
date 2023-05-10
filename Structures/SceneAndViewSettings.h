@@ -20,6 +20,8 @@ namespace SceneAndViewSettings {
 		Flat = 0, LookingGlass = 1
 	} GlobalScreenType;
 	inline bool applyScreenType = false;
+
+	// Read by render job and executed once. Then set to false
 	inline bool recompileFShaders = false;
 	inline bool reloadScene = false;
 	inline struct {
@@ -40,6 +42,9 @@ namespace SceneAndViewSettings {
 	inline bool subpixelOnePass = false;
 	inline bool fpsWindow = false;
 	inline bool backfaceCulling = true;
+	inline bool visualizeBVH;
+	inline unsigned int bvhSAHthreshold = 1000000;
+	inline unsigned int bvhDebugIterationsMask = UINT_MAX;
 
 	// Turn off event-driven rendering so all windows get updated every frame
 	inline bool overridePowerSave = false;

@@ -20,13 +20,39 @@
 #define MAX_OBJECT_BUFFER 64
 #endif
 
-#ifndef DEBUG_BVH_LEVEL
-#define DEBUG_BVH_LEVEL_0 vec3(1., 0., 1.)
-#define DEBUG_BVH_LEVEL_1 vec3(1., 1., 0.)
-#define DEBUG_BVH_LEVEL_2 vec3(0., 0., 1.)
-#define DEBUG_BVH_LEVEL_3 vec3(0., 1., 0.)
-#define DEBUG_BVH_LEVEL_4 vec3(1., 0., 0.)
-#define DEBUG_BVH_LEVEL_5 vec3(0., 1., 1.)
+#ifdef DEBUG_VISUALIZE_BVH
+    #ifndef DEBUG_BVH_LEVEL0_COLOR
+        #define DEBUG_BVH_LEVEL0_COLOR vec3(1., 0., 1.)
+    #endif
+    #ifndef DEBUG_BVH_LEVEL1_COLOR
+        #define DEBUG_BVH_LEVEL1_COLOR vec3(1., 1., 0.)
+    #endif
+    #ifndef DEBUG_BVH_LEVEL2_COLOR
+        #define DEBUG_BVH_LEVEL2_COLOR vec3(0., 0., 1.)
+    #endif
+    #ifndef DEBUG_BVH_LEVEL3_COLOR
+        #define DEBUG_BVH_LEVEL3_COLOR vec3(0., 1., 0.)
+    #endif
+    #ifndef DEBUG_BVH_LEVEL4_COLOR
+        #define DEBUG_BVH_LEVEL4_COLOR vec3(1., 0., 0.)
+    #endif
+    #ifndef DEBUG_BVH_LEVEL5_COLOR
+        #define DEBUG_BVH_LEVEL5_COLOR vec3(0., 1., 1.)
+    #endif
+
+    #ifndef DEBUG_BVH_LEVEL_COLORS
+        #define DEBUG_BVH_LEVEL_COLORS {DEBUG_BVH_LEVEL0_COLOR, DEBUG_BVH_LEVEL1_COLOR, DEBUG_BVH_LEVEL2_COLOR, DEBUG_BVH_LEVEL3_COLOR, DEBUG_BVH_LEVEL4_COLOR, DEBUG_BVH_LEVEL5_COLOR}
+    #endif
+
+    #ifndef DEBUG_BVH_EDGE_WIDTH
+		#define DEBUG_BVH_EDGE_WIDTH 0.3
+    #endif
+
+    #ifndef DEBUG_BVH_LEVEL_MASK
+        #define DEBUG_BVH_LEVEL_MASK 0xFFFFFFFFu
+    #endif
+
+    const vec3 DEBUG_BVH_COLOR_ARRAY[] = DEBUG_BVH_LEVEL_COLORS;
 #endif
 
 out vec4 OutColor;
@@ -136,15 +162,17 @@ layout(std430, binding = 9) readonly buffer BVHBuffer {
     vec4[] bvh;//packed nodes and vertices at the leaf level
 };
 
-
-uniform mat4 uView;
-uniform mat4 uProj;
-float cameraFarPlane = uProj[2].w / (uProj[2].z + 1.0);
-
 struct Ray {
     vec3 origin;
     vec3 direction;
 };
+
+uniform mat4 uView;
+uniform mat4 uProj;
+float cameraFarPlane = uProj[2].w / (uProj[2].z + 1.0);
+#ifdef DEBUG_VISUALIZE_BVH
+vec4 debugColor = vec4(0.);
+#endif
 
 //const float pos_infinity = uintBitsToFloat(0x7F800000);
 const float pos_infinity = 100000.0;
@@ -277,19 +305,18 @@ void getFlatScreenRay(vec2 pix, out Ray ray){
     ray = Ray(pos, normalize(dir.xyz));
 }
 
-bool rayBoxIntersection(vec3 minPos, vec3 maxPos, Ray ray)
+bool rayBoxIntersection(vec3 minPos, vec3 maxPos, vec3 rayOrigin, vec3 invDir, out float tmin, out float tmax)
 {
-    vec3 invDir = 1.0/ray.direction;
-    vec3 t1 = (minPos - ray.origin)*invDir;
-    vec3 t2 = (maxPos - ray.origin)*invDir;
+    vec3 t1 = (minPos - rayOrigin)*invDir;
+    vec3 t2 = (maxPos - rayOrigin)*invDir;
 
-    float tmin = max(
+    tmin = max(
             min(t1.x, t2.x), 
             max(
                 min(t1.y, t2.y), min(t1.z, t2.z)
             )
         );
-    float tmax = min(
+    tmax = min(
             max(t1.x, t2.x),
             min(
                 max(t1.y, t2.y), max(t1.z, t2.z)
@@ -300,6 +327,12 @@ bool rayBoxIntersection(vec3 minPos, vec3 maxPos, Ray ray)
         return false;
 
     return true;
+}
+
+bool rayBoxIntersection(vec3 minPos, vec3 maxPos, Ray ray)
+{
+	float tmin, tmax;
+	return rayBoxIntersection(minPos, maxPos, ray.origin, 1.0/ray.direction, tmin, tmax);
 }
 
 // Extract the sign bit from a 32-bit floating point number.
@@ -481,6 +514,9 @@ void findClosestHit(Ray ray, inout Hit closestHit)
     uint nodeIndex = 0;
 
     uint lastNode = bvh.length();
+    #ifdef DEBUG_VISUALIZE_BVH
+    uint iterationLevel = 0;
+    #endif
      
 	while(nodeIndex < lastNode)
 	{
@@ -488,9 +524,12 @@ void findClosestHit(Ray ray, inout Hit closestHit)
         node.bboxMin = bvh[nodeIndex * 2];
         node.bboxMax = bvh[nodeIndex * 2 + 1];
 
+
         uint primitiveIndex = floatBitsToUint(node.bboxMin.w);
 
         bool isLeaf = primitiveIndex != 0xFFFFFFFF;
+        float tmin, tmax;
+        vec3 invDir = 1.0 / ray.direction;
         if(isLeaf)
         {
             TriangleSecondHalf triSecond = trianglesSecond[primitiveIndex];
@@ -513,11 +552,54 @@ void findClosestHit(Ray ray, inout Hit closestHit)
                 closestHit.normal = normalize(normal);
             }
         }
-        else if (rayBoxIntersection(node.bboxMin.xyz, node.bboxMax.xyz, ray))
+        else if (rayBoxIntersection(node.bboxMin.xyz, node.bboxMax.xyz, ray.origin, invDir, tmin, tmax))
 		{
-			// If the ray intersects the bounding volume box
+            #ifdef DEBUG_VISUALIZE_BVH
+            if((iterationLevel & DEBUG_BVH_LEVEL_MASK) != 0)
+            {
+			    vec3 closestPointOnAABB = ray.origin + ray.direction * tmin;
+                vec3 farPointOnAABB = ray.origin + ray.direction * tmax;
+
+                vec3 distCMin = abs(closestPointOnAABB - node.bboxMin.xyz);
+                bvec3 isOnPlane = lessThan(distCMin, vec3(0.0001));
+                distCMin += vec3(isOnPlane) * 100;
+
+                vec3 distFMin = abs(farPointOnAABB - node.bboxMin.xyz);
+                isOnPlane = lessThan(distFMin, vec3(0.0001));
+                distFMin += vec3(isOnPlane) * 100;
+
+                vec3 distCMax = abs(closestPointOnAABB - node.bboxMax.xyz);
+                isOnPlane = lessThan(distCMax, vec3(0.0001));
+                distCMax += vec3(isOnPlane) * 100;
+
+                vec3 distFMax = abs(farPointOnAABB - node.bboxMax.xyz);
+                isOnPlane = lessThan(distFMax, vec3(0.0001));
+                distFMax += vec3(isOnPlane) * 100;
+
+
+                float edgeDistance = min(min(min(min(distCMin.x, distCMin.y), distCMin.z), distFMin.x), min(min(distFMin.y, distFMin.z), min(min(distCMax.x, distCMax.y), distCMax.z)));
+
+                vec4 thisDebugColor = vec4(DEBUG_BVH_COLOR_ARRAY[iterationLevel % DEBUG_BVH_COLOR_ARRAY.length()], 1.);
+                if(edgeDistance < DEBUG_BVH_EDGE_WIDTH)
+                {
+                    debugColor = mix(thisDebugColor, debugColor, 0.5);
+			    }
+                else
+                {
+                    debugColor = mix(thisDebugColor, debugColor, .99);
+                }
+            }
+            iterationLevel++;
+            #endif
+			// If the ray intersects the bounding volume box, go to the next level
             ++nodeIndex;
             continue;
+        }
+        else
+        {
+            #ifdef DEBUG_VISUALIZE_BVH
+            iterationLevel++;
+            #endif
         }
         nodeIndex = floatBitsToUint(node.bboxMax.w);
     }
@@ -784,4 +866,8 @@ void main() {
 	
     // gamma correction
 	OutColor = vec4( pow(col, vec3(1.0 / 2.2)), 1.0 );
+    #ifdef DEBUG_VISUALIZE_BVH
+
+    OutColor.rgb = mix(OutColor.rgb, debugColor.rgb, debugColor.a);
+    #endif
 }

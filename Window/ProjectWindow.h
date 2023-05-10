@@ -306,11 +306,13 @@ public:
 		}
 		try {
 			std::string fragSource = Helpers::relativeToExecutable("fragment.frag").string();
-			auto bouncesDefine = fmt::format("MAX_BOUNCES {}", maxBounces);
+			auto bouncesDefine = fmt::format("MAX_BOUNCES {:d}", maxBounces);
 			auto subpixelOnePassDefine = std::string(subpixelOnePass ? "SUBPIXEL_ONE_PASS" : "SUBPIXEL_MULTI_PASS");
 			auto cullingDefine = std::string(backfaceCulling ? "CULLING" : "NO_CULLING");
-			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine, cullingDefine });
-			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine, cullingDefine });
+			auto debugVisualizeBVHDefine = std::string(SceneAndViewSettings::visualizeBVH ? "DEBUG_VISUALIZE_BVH" : "NO_DEBUG_VISUALIZE_BVH");
+			auto debugLevelMaskDefine = fmt::format("DEBUG_BVH_LEVEL_MASK 0x{:X}u", SceneAndViewSettings::bvhDebugIterationsMask);
+			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine, cullingDefine, debugVisualizeBVHDefine, debugLevelMaskDefine });
+			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine, cullingDefine, debugVisualizeBVHDefine, debugLevelMaskDefine });
 			glAttachShader(program, GlobalScreenType == ScreenType::Flat ? fFlatShader : fShader);
 		}
 		catch (const std::runtime_error& e)
@@ -468,6 +470,7 @@ public:
 				), scene.position));
 
 				auto before = std::chrono::system_clock::now();
+				bvhBuilder.sahThreshold = SceneAndViewSettings::bvhSAHthreshold;
 				bvhBuilder.build(trianglesFirst, trianglesSecond);
 				auto after = std::chrono::system_clock::now();
 				std::cout << "BVH Construction took " << std::chrono::duration<float, std::milli>(after - before).count() << " ms";

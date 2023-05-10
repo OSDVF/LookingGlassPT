@@ -80,12 +80,12 @@ namespace
 		return bounds;
 	}
 
-	GLuint split(std::vector<TempNode>& nodes, GLuint begin, GLuint end, const Box3& nodeBounds)
+	GLuint split(std::vector<TempNode>& nodes, GLuint begin, GLuint end, const Box3& nodeBounds, const unsigned int sahThreshold)
 	{
 		GLuint count = end - begin;
 		GLuint bestSplit = begin;
 
-		if (count <= 1000000)
+		if (count <= sahThreshold)
 		{
 			// Use Surface Area Heuristic
 			GLuint bestAxis = 0;
@@ -177,7 +177,7 @@ namespace
 		};
 	}
 
-	GLuint buildNodeHierarchy(std::vector<TempNode>& nodes, GLuint begin, GLuint end)
+	GLuint buildNodeHierarchy(std::vector<TempNode>& nodes, GLuint begin, GLuint end, const unsigned int sahThreshold)
 	{
 		GLuint count = end - begin;
 
@@ -188,15 +188,15 @@ namespace
 
 		Box3 bounds = calculateBounds(nodes, begin, end);
 
-		GLuint mid = split(nodes, begin, end, bounds);
+		GLuint mid = split(nodes, begin, end, bounds, sahThreshold);
 
 		GLuint nodeId = (GLuint)nodes.size();
 		nodes.push_back(TempNode());
 
 		TempNode node;
 
-		node.left = buildNodeHierarchy(nodes, begin, mid);
-		node.right = buildNodeHierarchy(nodes, mid, end);
+		node.left = buildNodeHierarchy(nodes, begin, mid, sahThreshold);
+		node.right = buildNodeHierarchy(nodes, mid, end, sahThreshold);
 
 		float surfaceAreaLeft = bboxSurfaceArea(nodes[node.left].bboxMin, nodes[node.left].bboxMax);
 		float surfaceAreaRight = bboxSurfaceArea(nodes[node.right].bboxMin, nodes[node.right].bboxMax);
@@ -278,7 +278,7 @@ void BVHBuilder::build(std::vector<FastTriangleFirstHalf> trianglesFirst, std::v
 		tempNodes.push_back(node);
 	}
 
-	const GLuint rootIndex = buildNodeHierarchy(tempNodes, 0, (GLuint)tempNodes.size());
+	const GLuint rootIndex = buildNodeHierarchy(tempNodes, 0, (GLuint)tempNodes.size(), this->sahThreshold);
 
 	//
 	// Node reordering to ensure cache optimisation

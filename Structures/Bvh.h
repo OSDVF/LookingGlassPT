@@ -31,5 +31,6 @@ struct BVHBuilder
 {
 	std::vector<BVHNode> m_nodes;
 	std::vector<BVHPackedNode> m_packedNodes;
+	unsigned int sahThreshold = 1000000;
 	void build(std::vector<FastTriangleFirstHalf> trianglesFirst, std::vector<FastTriangleSecondHalf> trianglesSecond);
 };

@@ -43,9 +43,10 @@ public:
 		}
 	}
 
-	bool logarithmicScale = true;
+	bool logarithmicScale = false;
 	bool uniformScale = true;
 	const char* fileErrorDialog = "File Selection Error";
+	int bvhIterations = 5;
 	// Redraws only when a event occurs
 	void renderOnEvent(std::deque<SDL_Event> events) override
 	{
@@ -58,6 +59,36 @@ public:
 			if (ImGui::TreeNode("Debug"))
 			{
 				ImGui::Checkbox("Statistics window", &SceneAndViewSettings::fpsWindow);
+				if (ImGui::Checkbox("Visualize BVH", &SceneAndViewSettings::visualizeBVH))
+				{
+					SceneAndViewSettings::recompileFShaders = true;
+				}
+				if (SceneAndViewSettings::visualizeBVH)
+				{
+					ImGui::TreePush("BVH Iterations");
+					ImGui::InputInt("Iterations", &bvhIterations);
+					for (int i = 0; i < bvhIterations; i++)
+					{
+						char name[] = "Level   ";
+						name[7] = '0' + i % 10;
+						name[6] = '0' + i / 10;
+						bool checked = (SceneAndViewSettings::bvhDebugIterationsMask & (1 << i)) != 0;
+						if (ImGui::Checkbox(name, &checked))
+						{
+							if (checked)
+							{
+								SceneAndViewSettings::bvhDebugIterationsMask |= (1 << i);
+							}
+							else
+							{
+								SceneAndViewSettings::bvhDebugIterationsMask &= ~(1 << i);
+							}
+							SceneAndViewSettings::recompileFShaders = true;
+						}
+					}
+					ImGui::TreePop();
+				}
+
 				const char* const severities[] = {
 					"Everything",
 					"Low or higher",
@@ -246,12 +277,15 @@ public:
 				}
 				ImGui::EndPopup();
 			}
+			constexpr enum ImGuiDataType_ dataType = sizeof(SceneAndViewSettings::scene.scale.x) == sizeof(float) ? ImGuiDataType_Float : ImGuiDataType_Double;
 			if (logarithmicScale)
 			{
 				auto scPowerText = "Scale Power";
 				glm::vec3 scalePower = { log10(SceneAndViewSettings::scene.scale.x), log10(SceneAndViewSettings::scene.scale.y), log10(SceneAndViewSettings::scene.scale.z) };
-				if (uniformScale ? ImGui::DragFloat(scPowerText, glm::value_ptr(scalePower), .1f, -5, 5) :
-					ImGui::DragFloat3(scPowerText, glm::value_ptr(scalePower), .1f, -5, 5))
+				const decltype(SceneAndViewSettings::scene.scale.x) min = -5;
+				const decltype(SceneAndViewSettings::scene.scale.x) max = 5;
+				if (uniformScale ? ImGui::DragScalar(scPowerText, dataType, glm::value_ptr(scalePower), .1f, &min, &max) :
+					ImGui::DragScalarN(scPowerText, dataType, glm::value_ptr(scalePower), 3, .1f, &min, &max))
 				{
 					if (uniformScale)
 					{
@@ -263,16 +297,16 @@ public:
 			}
 			else
 			{
-				double min = 0.00001;
-				double max = 100000;
+				const decltype(SceneAndViewSettings::scene.scale.x) min = 0.00001;
+				const decltype(SceneAndViewSettings::scene.scale.x) max = 100000;
 				if (uniformScale)
 				{
-					ImGui::DragScalar("Scale##Scene", ImGuiDataType_Double, &SceneAndViewSettings::scene.scale.x, 100.f, &min, &max, "%lf", ImGuiSliderFlags_Logarithmic);
+					ImGui::DragScalar("Scale##Scene", dataType, &SceneAndViewSettings::scene.scale.x, 100.f, &min, &max, "%lf", ImGuiSliderFlags_Logarithmic);
 					SceneAndViewSettings::scene.scale.y = SceneAndViewSettings::scene.scale.z = SceneAndViewSettings::scene.scale.x;
 				}
 				else
 				{
-					ImGui::DragScalarN("Scale##Scene", ImGuiDataType_Double, &SceneAndViewSettings::scene.scale.x, 3, 100.f, &min, &max, "%f", ImGuiSliderFlags_Logarithmic);
+					ImGui::DragScalarN("Scale##Scene", dataType, &SceneAndViewSettings::scene.scale.x, 3, 100.f, &min, &max, "%f", ImGuiSliderFlags_Logarithmic);
 				}
 			}
 			ImGui::TreePush("Details");
@@ -292,7 +326,12 @@ public:
 				SceneAndViewSettings::recompileFShaders = true;
 			}
 
-			ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &SceneAndViewSettings::objectCountLimit, &step);
+			if (ImGui::TreeNode("Performance"))
+			{
+				ImGui::InputScalar("Max Triangles For SAH", ImGuiDataType_U32, &SceneAndViewSettings::bvhSAHthreshold, &step, &bigStep);
+				ImGui::InputScalar("Maximum Objects", ImGuiDataType_U32, &SceneAndViewSettings::objectCountLimit, &step);
+				ImGui::TreePop();
+			}
 			if (ImGui::Button("(Re)load"))
 			{
 				SceneAndViewSettings::reloadScene = true;

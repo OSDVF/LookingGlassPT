@@ -2,6 +2,13 @@
 #include "Structures/SceneAndViewSettings.h"
 #include <boost/stacktrace.hpp>
 
+const std::map<unsigned int, GLenum> orderedSeverity = {
+	{GL_DEBUG_SEVERITY_NOTIFICATION,1},
+	{GL_DEBUG_SEVERITY_LOW,2},
+	{GL_DEBUG_SEVERITY_MEDIUM,3},
+	{GL_DEBUG_SEVERITY_HIGH,4 }
+};
+
 namespace GlHelpers {
 	void GLAPIENTRY
 		MessageCallback(GLenum source,
@@ -12,7 +19,7 @@ namespace GlHelpers {
 			const GLchar* message,
 			const void* userParam)
 	{
-		if (severity >= SceneAndViewSettings::debugOutput)
+		if (orderedSeverity.at(severity) >= orderedSeverity.at(SceneAndViewSettings::debugOutput))
 		{
 			switch (type) {
 			case GL_DEBUG_TYPE_ERROR:
@@ -108,7 +115,7 @@ namespace GlHelpers {
 		if (!success)
 		{
 			std::string infoLog(512, ' ');
-			glGetProgramInfoLog(success, 512, NULL, (GLchar*)infoLog.c_str());
+			glGetProgramInfoLog(program, 512, NULL, (GLchar*)infoLog.c_str());
 			std::cerr << "Shader link failed:\n" << infoLog << std::endl;
 		}
 	}
