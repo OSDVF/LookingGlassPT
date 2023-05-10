@@ -165,15 +165,23 @@ namespace
 			// Use Median Split
 			glm::vec3 extents = nodeBounds.dimensions();
 			int majorAxis = (int)std::distance(&extents.x, std::max_element(&extents.x, &extents.z));
-			auto splitPos = (nodeBounds.m_min[majorAxis] + nodeBounds.m_max[majorAxis]) * 0.5f;
 
-			auto midNode = std::partition(nodes.begin() + begin, nodes.begin() + end,
-				[&](const TempNode& a)
+			std::sort(nodes.begin() + begin, nodes.begin() + end,
+				[&](const TempNode& a, const TempNode& b)
 				{
-					return a.bboxCenter[majorAxis] < splitPos;
+					return a.bboxCenter[majorAxis] < b.bboxCenter[majorAxis];
 				});
 
-			return (GLuint)(midNode - nodes.begin());
+			float splitPos = (nodeBounds.m_min[majorAxis] + nodeBounds.m_max[majorAxis]) * 0.5f;
+			for (uint32_t mid = begin + 1; mid < end; ++mid)
+			{
+				if (nodes[mid].bboxCenter[majorAxis] >= splitPos)
+				{
+					return mid;
+				}
+			}
+
+			return end - 1;
 		};
 	}
 

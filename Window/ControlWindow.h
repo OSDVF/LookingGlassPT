@@ -137,6 +137,7 @@ public:
 		}
 		int step = 1;
 		int bigStep = 10; // No step on snek
+		constexpr enum ImGuiDataType_ dataType = sizeof(SceneAndViewSettings::scene.scale.x) == sizeof(float) ? ImGuiDataType_Float : ImGuiDataType_Double;
 		if (ImGui::TreeNodeEx("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			if (SceneAndViewSettings::pathTracing)
@@ -277,7 +278,6 @@ public:
 				}
 				ImGui::EndPopup();
 			}
-			constexpr enum ImGuiDataType_ dataType = sizeof(SceneAndViewSettings::scene.scale.x) == sizeof(float) ? ImGuiDataType_Float : ImGuiDataType_Double;
 			if (logarithmicScale)
 			{
 				auto scPowerText = "Scale Power";
@@ -314,13 +314,14 @@ public:
 			ImGui::SameLine();
 			ImGui::Checkbox("Uniform", &uniformScale);
 			ImGui::TreePop();
-			double min = -10000;
-			double max = -10000;
-			ImGui::DragScalarN("Position##Scene", ImGuiDataType_Double, &SceneAndViewSettings::scene.position.x, 3, .1f, &min, &max);
+			decltype(SceneAndViewSettings::scene.position.x) min = -10000;
+			decltype(SceneAndViewSettings::scene.position.x) max = -10000;
+			ImGui::DragScalarN("Position##Scene", dataType, &SceneAndViewSettings::scene.position.x, 3, .1f, &min, &max);
 			min = 0;
-			max = 360 - DBL_EPSILON;
-			ImGui::DragScalarN("Rotation (deg)", ImGuiDataType_Double, &SceneAndViewSettings::scene.rotationDeg.x, 3, .1f, &min, &max);
+			max = 360 - (dataType == ImGuiDataType_::ImGuiDataType_Float ? FLT_EPSILON : DBL_EPSILON);
+			ImGui::DragScalarN("Rotation (deg)", dataType, &SceneAndViewSettings::scene.rotationDeg.x, 3, .1f, &min, &max);
 			ImGui::SliderFloat("Light Multiplier", &SceneAndViewSettings::lightMultiplier, 0.1, 10.f, "%.3f", ImGuiSliderFlags_Logarithmic);
+			ImGui::Checkbox("Skylight", &SceneAndViewSettings::skyLight);
 			if (ImGui::Checkbox("Backface Culling", &SceneAndViewSettings::backfaceCulling))
 			{
 				SceneAndViewSettings::recompileFShaders = true;

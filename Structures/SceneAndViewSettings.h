@@ -42,6 +42,7 @@ namespace SceneAndViewSettings {
 	inline bool subpixelOnePass = false;
 	inline bool fpsWindow = false;
 	inline bool backfaceCulling = true;
+	inline bool skyLight = false;
 	inline bool visualizeBVH;
 	inline unsigned int bvhSAHthreshold = 1000000;
 	inline unsigned int bvhDebugIterationsMask = UINT_MAX;

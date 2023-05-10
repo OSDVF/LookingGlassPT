@@ -469,6 +469,26 @@ public:
 					glm::radians(scene.rotationDeg.x), glm::radians(scene.rotationDeg.y), glm::radians(scene.rotationDeg.z)
 				), scene.position));
 
+				if (SceneAndViewSettings::skyLight)
+				{
+					if (lights.empty())
+					{
+						Light currentLight = {
+							glm::vec3(0,1000,0),
+							10000,
+							glm::vec3(0,-1,0),
+							10000 * 10000,
+							glm::vec4(1.f) * SceneAndViewSettings::lightMultiplier,
+							-1
+						};
+						lights.push_back(currentLight);
+					}
+					else
+					{
+						std::cerr << "Sky light cannot be used with other lights\n";
+					}
+				}
+
 				auto before = std::chrono::system_clock::now();
 				bvhBuilder.sahThreshold = SceneAndViewSettings::bvhSAHthreshold;
 				bvhBuilder.build(trianglesFirst, trianglesSecond);
