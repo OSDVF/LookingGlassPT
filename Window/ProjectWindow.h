@@ -311,8 +311,9 @@ public:
 			auto cullingDefine = std::string(backfaceCulling ? "CULLING" : "NO_CULLING");
 			auto debugVisualizeBVHDefine = std::string(SceneAndViewSettings::visualizeBVH ? "DEBUG_VISUALIZE_BVH" : "NO_DEBUG_VISUALIZE_BVH");
 			auto debugLevelMaskDefine = fmt::format("DEBUG_BVH_LEVEL_MASK 0x{:X}u", SceneAndViewSettings::bvhDebugIterationsMask);
-			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine, cullingDefine, debugVisualizeBVHDefine, debugLevelMaskDefine });
-			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine, cullingDefine, debugVisualizeBVHDefine, debugLevelMaskDefine });
+			auto debugBvhEdgeWidthDefine = fmt::format("DEBUG_BVH_EDGE_WIDTH {:f}", SceneAndViewSettings::bvhEdgeWidth);
+			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fShader, { bouncesDefine, subpixelOnePassDefine, cullingDefine, debugVisualizeBVHDefine, debugLevelMaskDefine, debugBvhEdgeWidthDefine });
+			GlHelpers::compileShader<GL_FRAGMENT_SHADER>(fragSource, fFlatShader, { "FLAT_SCREEN", bouncesDefine, subpixelOnePassDefine, cullingDefine, debugVisualizeBVHDefine, debugLevelMaskDefine, debugBvhEdgeWidthDefine });
 			glAttachShader(program, GlobalScreenType == ScreenType::Flat ? fFlatShader : fShader);
 		}
 		catch (const std::runtime_error& e)

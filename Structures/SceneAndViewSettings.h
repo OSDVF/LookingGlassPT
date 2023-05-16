@@ -45,7 +45,8 @@ namespace SceneAndViewSettings {
 	inline bool skyLight = false;
 	inline bool visualizeBVH;
 	inline unsigned int bvhSAHthreshold = 1000000;
-	inline unsigned int bvhDebugIterationsMask = UINT_MAX;
+	inline unsigned int bvhDebugIterationsMask = 0x3;
+	inline float bvhEdgeWidth = 0.3f;
 
 	// Turn off event-driven rendering so all windows get updated every frame
 	inline bool overridePowerSave = false;

@@ -46,7 +46,7 @@ public:
 	bool logarithmicScale = false;
 	bool uniformScale = true;
 	const char* fileErrorDialog = "File Selection Error";
-	int bvhVisualizeIterations = 5;
+	int bvhVisualizeIterations = 2;
 	std::chrono::high_resolution_clock::time_point pathTracingFirstFrame;
 	long pathTracingDuration = -1;
 	// Redraws only when a event occurs
@@ -68,10 +68,20 @@ public:
 				if (SceneAndViewSettings::visualizeBVH)
 				{
 					ImGui::TreePush("BVH Iterations");
-					ImGui::InputInt("Iterations", &bvhVisualizeIterations);
+					if (ImGui::InputFloat("Line Width", &SceneAndViewSettings::bvhEdgeWidth, 0.01f, 0.1f, "%.2f"))
+					{
+						SceneAndViewSettings::recompileFShaders = true;
+					}
+					if (ImGui::InputInt("Iterations", &bvhVisualizeIterations))
+					{
+						for (int i = bvhVisualizeIterations; i < 32; i++)
+						{
+							SceneAndViewSettings::bvhDebugIterationsMask &= ~(1 << i);
+						}
+					}
 					for (int i = 0; i < bvhVisualizeIterations; i++)
 					{
-						char name[] = "Level   ";
+						char name[] = "Iteration   ";
 						name[7] = '0' + i % 10;
 						name[6] = '0' + i / 10;
 						bool checked = (SceneAndViewSettings::bvhDebugIterationsMask & (1 << i)) != 0;
@@ -153,11 +163,11 @@ public:
 			}
 			else
 			{
-				if(pathTracingDuration == 0)
+				if (pathTracingDuration == 0)
 				{
 					pathTracingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - pathTracingFirstFrame).count();
 				}
-				if(pathTracingDuration > 0)
+				if (pathTracingDuration > 0)
 				{
 					ImGui::Text("Took %ld ms", pathTracingDuration);
 				}
