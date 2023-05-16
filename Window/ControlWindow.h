@@ -46,7 +46,9 @@ public:
 	bool logarithmicScale = false;
 	bool uniformScale = true;
 	const char* fileErrorDialog = "File Selection Error";
-	int bvhIterations = 5;
+	int bvhVisualizeIterations = 5;
+	std::chrono::high_resolution_clock::time_point pathTracingFirstFrame;
+	long pathTracingDuration = -1;
 	// Redraws only when a event occurs
 	void renderOnEvent(std::deque<SDL_Event> events) override
 	{
@@ -66,8 +68,8 @@ public:
 				if (SceneAndViewSettings::visualizeBVH)
 				{
 					ImGui::TreePush("BVH Iterations");
-					ImGui::InputInt("Iterations", &bvhIterations);
-					for (int i = 0; i < bvhIterations; i++)
+					ImGui::InputInt("Iterations", &bvhVisualizeIterations);
+					for (int i = 0; i < bvhVisualizeIterations; i++)
 					{
 						char name[] = "Level   ";
 						name[7] = '0' + i % 10;
@@ -151,6 +153,14 @@ public:
 			}
 			else
 			{
+				if(pathTracingDuration == 0)
+				{
+					pathTracingDuration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - pathTracingFirstFrame).count();
+				}
+				if(pathTracingDuration > 0)
+				{
+					ImGui::Text("Took %ld ms", pathTracingDuration);
+				}
 				ImGui::InputScalar("Max Iterations", ImGuiDataType_U64, &SceneAndViewSettings::maxIterations, &step, &bigStep);
 				if (ImGui::InputScalar("Max Ray Bounces", ImGuiDataType_U64, &SceneAndViewSettings::maxBounces, &step, &bigStep))
 				{
@@ -160,12 +170,15 @@ public:
 				if (ImGui::Button("Start/Resume Path Tracing"))
 				{
 					SceneAndViewSettings::startPathTracing();
+					pathTracingFirstFrame = std::chrono::high_resolution_clock::now();
+					pathTracingDuration = 0;
 				}
 				if (SceneAndViewSettings::rayIteration > 0)
 				{
 					if (ImGui::Button("Reset Result"))
 					{
 						SceneAndViewSettings::rayIteration = 0;
+						pathTracingDuration = -1;
 					}
 				}
 			}

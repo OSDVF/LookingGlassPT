@@ -479,7 +479,7 @@ public:
 							glm::vec3(0,-1,0),
 							10000 * 10000,
 							glm::vec4(1.f) * SceneAndViewSettings::lightMultiplier,
-							-1
+							UINT32_MAX
 						};
 						lights.push_back(currentLight);
 					}

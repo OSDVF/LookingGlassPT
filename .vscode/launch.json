@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/LookingGlassPT",
-            "args": [],
+            "args": ["d", "flat"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [

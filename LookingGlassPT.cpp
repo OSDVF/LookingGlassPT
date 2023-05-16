@@ -78,11 +78,16 @@ int main(int argc, const char** argv)
 
 	bool exit = false;
 	float lastTime = SDL_GetPerformanceCounter();
-	std::thread renderThread([&windows, &eventQueues, &exit] {
+	std::thread renderThread([&windows, &eventQueues, &exit, debug] {
 		Helpers::SetThreadName("Drawing Thread");
 		for (auto window : windows)
 		{
 			window->setupGL();
+			if(debug)
+			{
+				// Disable vsync
+				SDL_GL_SetSwapInterval(0);
+			}
 		}
 		if (!checkExtensions())
 		{
